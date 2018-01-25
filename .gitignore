@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.tsv
+
+
+# virtualenv
+.venv
+venv/
+ENV/
+
+Data/
+cache/
+*.ipynb_checkpoints
+*.swp
+*.DS_Store
+.RData
+.Rapp.history
+.Rhistory
