@@ -1,0 +1,9 @@
+#!/bin/bash
+# Model tuning run
+# run a tuning script file, log the output and write to the index file.
+# usage:   mtrun foo.py [args]
+
+pyscript="${1}"
+nopy=`basename -s .py ${pyscript}`
+shift
+python ${pyscript} -i --predfile ${nopy} $* | tee -a ${nopy}.log | more; 
