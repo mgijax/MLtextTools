@@ -1,5 +1,8 @@
-import sys
-sys.path.extend(['..','../..','../../..'])
+import sys, ConfigParser
+cp = ConfigParser.ConfigParser()
+cp.read([ d+'/config.cfg' for d in ['.', '..', '../..', '../../..'] ])
+TOOLSDIR = cp.get('DEFAULT', 'MLTEXTTOOLSDIR')
+sys.path = [ sys.path[0], '..', '../..', '../../..', TOOLSDIR ] + sys.path[1:]
 import textTuningLib as tl
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
@@ -17,7 +20,7 @@ pipeline = Pipeline( [
 		strip_accents=None,	# if done in preprocessing
 		decode_error='strict',	# if handled in preproc
 		lowercase=False,	# if done in preprocessing
-		stop_words="english",
+		stop_words='english',
 		#token_pattern=r'\b([a-z_]\w+)\b', Use default for now
 		),),
 #('scaler'    ,StandardScaler(copy=True,with_mean=False,with_std=True)),
