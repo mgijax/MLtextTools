@@ -332,13 +332,14 @@ class TextPipelineTuningHelper (object):
 	else: tuningFile = ''
 
 	with open(args.indexFile, 'a') as fp:
-	    fp.write("%s\tP,R,F%d\t%4.2f\t%4.2f\t%4.2f\t%s\n" % \
+	    fp.write("%s\tPRF%d,F1\t%4.2f\t%4.2f\t%4.2f\t%4.2f\t%s\n" % \
 	    (self.time,
 	    COMPARE_BETA,
 	    precision_score( y_true, y_predicted, pos_label=INDEX_OF_YES),
 	    recall_score( y_true, y_predicted, pos_label=INDEX_OF_YES),
 	    fbeta_score( y_true, y_predicted, COMPARE_BETA,
 						    pos_label=INDEX_OF_YES), 
+	    fbeta_score( y_true, y_predicted, 1, pos_label=INDEX_OF_YES), 
 	    tuningFile,
 	    ) )
 # ---------------------------
