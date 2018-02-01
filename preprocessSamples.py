@@ -16,10 +16,10 @@
 # This script is intended to be independent of specific ML projects.
 #
 import sys
-sys.path.append('..')
-sys.path.append('../..')
+sys.path.extend(['..', '../..', '../../..', '../../../..', '../../../../..'])
 import string
 import os
+import time
 import argparse
 import ConfigParser
 from sampleDataLib import SampleRecord
@@ -27,7 +27,7 @@ from sampleDataLib import SampleRecord
 #-----------------------------------
 cp = ConfigParser.ConfigParser()
 cp.optionxform = str # make keys case sensitive
-cp.read(["config.cfg","../config.cfg", "../../config.cfg","../../../config.cfg"])
+cp.read([ d+'/config.cfg' for d in ['.', '..', '../..', '../../..'] ])
 RECORDSEP     = eval(cp.get("DEFAULT", "RECORDSEP"))
 PREPROCESSORS = eval(cp.get("DEFAULT", "PREPROCESSORS"))
 
@@ -66,6 +66,7 @@ def main():
 					' '.join(args.preprocessors)) 
     counts = { 'samples':0, 'skipped':0}
     headerLine = None
+    startTime = time.time()
 
     for fn in args.inputFiles:
 
@@ -81,6 +82,8 @@ def main():
 	del lines[0]			# header line
 	for line in lines:
 	    counts['samples'] += 1
+	    if args.verbose and (counts['samples'] % 100 == 0) :
+		sys.stderr.write("%d.." % counts['samples'] )
 	    sr = SampleRecord(line)
 
 	    for pp in args.preprocessors:
@@ -95,6 +98,8 @@ def main():
     if args.verbose:
 	sys.stderr.write("Samples processed: %d \t Samples skipped: %d\n" % \
 			    (counts['samples'], counts['skipped']) )
+	sys.stderr.write( "Total time: %8.3f seconds\n\n" % \
+						    (time.time()-startTime))
 #
 if __name__ == "__main__":
     main()

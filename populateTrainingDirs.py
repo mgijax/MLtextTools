@@ -14,8 +14,7 @@
 # This script is intended to be independent of specific ML projects.
 #
 import sys
-sys.path.append('..')
-sys.path.append('../..')
+sys.path.extend(['..', '../..', '../../..', '../../../..', '../../../../..'])
 import string
 import os
 import argparse
@@ -25,7 +24,7 @@ import sampleDataLib as sdLib
 #-----------------------------------
 cp = ConfigParser.ConfigParser()
 cp.optionxform = str # make keys case sensitive
-cp.read(["config.cfg","../config.cfg", "../../config.cfg","../../../config.cfg"])
+cp.read([ d+'/config.cfg' for d in ['.', '..', '../..', '../../..'] ])
 RECORDSEP = eval(cp.get("DEFAULT", "RECORDSEP"))
 #----------------------
 
