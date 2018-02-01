@@ -36,7 +36,6 @@ import re
 import string
 import os
 import os.path
-sys.path.extend(['..', '../..', '../../..'])
 import argparse
 import ConfigParser
 
@@ -51,7 +50,7 @@ from sklearn.metrics import make_scorer, fbeta_score, precision_score,\
 #-----------------------------------
 cp = ConfigParser.ConfigParser()
 cp.optionxform = str # make keys case sensitive
-cp.read(["../../../config.cfg","../../config.cfg","../config.cfg","config.cfg"] )
+cp.read([ d+'/config.cfg' for d in ['.', '..', '../..', '../../..'] ])
 
 TRAINING_DATA     = cp.get     ("DEFAULT", "TRAINING_DATA")
 INDEX_OF_YES      = cp.getint  ("DEFAULT", "INDEX_OF_YES")
