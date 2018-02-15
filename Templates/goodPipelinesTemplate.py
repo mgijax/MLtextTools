@@ -3,14 +3,13 @@
 # Define a variable "pipelines" that is the list of Pipelines.
 
 import sys
-sys.path.append('..')
 import numpy
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.preprocessing import StandardScaler, MaxAbsScaler
 from sklearn.linear_model import SGDClassifier
-#from sklearn.svm import SVC, LinearSVC
-#import sklearnHelperLib as ppLib 
+from sklearn.svm import SVC, LinearSVC
+import sklearnHelperLib as hLib 
 #-----------------------
 
 global pipelines

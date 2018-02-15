@@ -14,17 +14,19 @@
 # This script is intended to be independent of specific ML projects.
 #
 import sys
-sys.path.extend(['..', '../..', '../../..', '../../../..', '../../../../..'])
 import string
 import os
 import argparse
 import ConfigParser
+
+sys.path.extend( ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] )
 import sampleDataLib as sdLib
 
 #-----------------------------------
 cp = ConfigParser.ConfigParser()
 cp.optionxform = str # make keys case sensitive
-cp.read([ d+'/config.cfg' for d in ['.', '..', '../..', '../../..'] ])
+cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,6)]]
+cp.read(cl)
 RECORDSEP = eval(cp.get("DEFAULT", "RECORDSEP"))
 #----------------------
 

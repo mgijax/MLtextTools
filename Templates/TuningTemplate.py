@@ -1,6 +1,7 @@
 import sys, ConfigParser
 cp = ConfigParser.ConfigParser()
-cp.read([ d+'/config.cfg' for d in ['.', '..', '../..', '../../..'] ])
+cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,8)]]
+cp.read(cl)
 TOOLSDIR = cp.get('DEFAULT', 'MLTEXTTOOLSDIR')
 sys.path = [ sys.path[0], '..', '../..', '../../..', TOOLSDIR ] + sys.path[1:]
 import textTuningLib as tl

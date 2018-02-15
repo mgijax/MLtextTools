@@ -16,19 +16,21 @@
 # This script is intended to be independent of specific ML projects.
 #
 import sys
-sys.path.extend(['..', '../..', '../../..', '../../../..', '../../../../..'])
 import string
 import os
 import time
 import argparse
 import ConfigParser
+cp = ConfigParser.ConfigParser()
+cp.optionxform = str # make keys case sensitive
+cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,8)]]
+cp.read(cl)
+RECORDSEP     = eval(cp.get("DEFAULT", "RECORDSEP"))
+
+sys.path.extend( ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] )
 from sampleDataLib import SampleRecord
 
 #-----------------------------------
-cp = ConfigParser.ConfigParser()
-cp.optionxform = str # make keys case sensitive
-cp.read([ d+'/config.cfg' for d in ['.', '..', '../..', '../../..'] ])
-RECORDSEP     = eval(cp.get("DEFAULT", "RECORDSEP"))
 PREPROCESSORS = eval(cp.get("DEFAULT", "PREPROCESSORS"))
 
 def parseCmdLine():

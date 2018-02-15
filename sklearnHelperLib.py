@@ -20,13 +20,6 @@ def removeNonAscii(text):
     return ''.join([i if ord(i) < 128 else ' ' for i in text])
 #-----------------------------------
 
-#-----------------------------------
-# Config, constants, ...
-# ---------------------------
-#cp = ConfigParser()
-#cp.optionxform = str # make keys case sensitive
-#cp.read(["config.cfg", "../config.cfg"])
-
 # ---------------------------
 # Probably best to preprocess the whole data set once
 #  and stem it (and remove URLs) if stemming makes a big enough difference.

@@ -50,7 +50,8 @@ from sklearn.metrics import make_scorer, fbeta_score, precision_score,\
 #-----------------------------------
 cp = ConfigParser.ConfigParser()
 cp.optionxform = str # make keys case sensitive
-cp.read([ d+'/config.cfg' for d in ['.', '..', '../..', '../../..'] ])
+cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,6)]]
+cp.read(cl)
 
 TRAINING_DATA     = cp.get     ("DEFAULT", "TRAINING_DATA")
 INDEX_OF_YES      = cp.getint  ("DEFAULT", "INDEX_OF_YES")
@@ -424,7 +425,7 @@ SSTART = "### "			# output section start delimiter
 
 def getReportStart( curtime, beta, randomSeeds,dataDir, index, indexFile):
 
-    output = SSTART + "Start Time %s" % curtime
+    output = SSTART + "Start Time %s  %s" % (curtime, sys.argv[0])
     if index: output += "\tindex file: %s" % indexFile
     output += "\n"
     output += "Data dir: %s,\tGridSearch Beta: %d\n" % (dataDir, beta)
