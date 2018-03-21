@@ -1,9 +1,4 @@
-import sys, ConfigParser
-cp = ConfigParser.ConfigParser()
-cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,8)]]
-cp.read(cl)
-TOOLSDIR = cp.get('DEFAULT', 'MLTEXTTOOLSDIR')
-sys.path = [ sys.path[0], '..', '../..', '../../..', TOOLSDIR ] + sys.path[1:]
+import sys
 import textTuningLib as tl
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
@@ -29,7 +24,7 @@ pipeline = Pipeline( [
 ('classifier', SGDClassifier(verbose=0, class_weight='balanced',
 		random_state=randomSeeds['randForClassifier']) ),
 ] )
-parameters={'vectorizer__ngram_range':[(1,3)],
+parameters={'vectorizer__ngram_range':[(1,2)],
 	'vectorizer__min_df':[2],
 	'vectorizer__max_df':[.98],
 	'classifier__alpha':[1],
@@ -38,6 +33,18 @@ parameters={'vectorizer__ngram_range':[(1,3)],
 	'classifier__loss':[ 'hinge' ],
 	'classifier__penalty':['l2'],
 	}
-p = tl.TextPipelineTuningHelper( pipeline, parameters, beta=4, cv=2,
-			randomSeeds=randomSeeds,).fit()
-print p.getReports()
+p = tl.TextPipelineTuningHelper( pipeline, parameters,
+		    trainingDataDir=args.trainingData,
+		    testSplit=args.testSplit,
+		    gridSearchBeta=args.gridSearchBeta,
+		    gridSearchCV=args.gridSearchCV,
+		    indexOfYes=args.indexOfYes,
+		    randomSeeds=randomSeeds,
+		    ).fit()
+print p.getReports(wIndex=args.wIndex,
+		    tuningIndexFile=args.tuningIndexFile,
+		    wPredictions=args.wPredictions,
+		    predFilePrefix=args.predFilePrefix,
+		    compareBeta=args.compareBeta,
+		    verbose=args.verbose,
+		    )

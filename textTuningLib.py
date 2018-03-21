@@ -16,7 +16,7 @@ Assumes:
 * Tuning a binary text classification pipeline (maybe this assumption can go?)
 * with class labels yes and no
 * The text sample data is in sklearn load_files directory structure
-* Topmost directory in that folder is specified in config file
+* Topmost directory in that folder is specified in config file or cmd line arg
 * We are Tuning a Pipeline via GridSearchCV
 * The Pipeline has named steps: 'vectorizer', 'classifier' with their
 *   obvious meanings (may have other steps too)
@@ -48,37 +48,47 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import make_scorer, fbeta_score, precision_score,\
 			recall_score, classification_report, confusion_matrix
 #-----------------------------------
-cp = ConfigParser.ConfigParser()
-cp.optionxform = str # make keys case sensitive
-cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,6)]]
-cp.read(cl)
-
-TRAINING_DATA     = cp.get     ("DEFAULT", "TRAINING_DATA")
-INDEX_OF_YES      = cp.getint  ("DEFAULT", "INDEX_OF_YES")
-INDEX_OF_NO       = cp.getint  ("DEFAULT", "INDEX_OF_NO")
-GRIDSEARCH_BETA   = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_BETA")
-COMPARE_BETA      = cp.getint  ("MODEL_TUNING", "COMPARE_BETA")
-TEST_SPLIT        = cp.getfloat("MODEL_TUNING", "TEST_SPLIT")
-GRIDSEARCH_CV     = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_CV")
-TUNING_INDEX_FILE = cp.get     ("MODEL_TUNING", "TUNING_INDEX_FILE")
-PRED_OUTPUT_FILE_PREFIX = cp.get("MODEL_TUNING", "PRED_OUTPUT_FILE_PREFIX")
 
 # in the list of classifications labels for evaluating text data
 # FIXME: Can these be replaced by CLASS_NAMES in config file?
-LABELS = [ INDEX_OF_YES, INDEX_OF_NO ]
+LABELS = [ 1,0]		#[ INDEX_OF_YES, INDEX_OF_NO ]
 TARGET_NAMES = ['yes', 'no']
 
 # ---------------------------
 # Common command line parameter handling for the tuning scripts
 # ---------------------------
 
-args = {}
-
 def parseCmdLine():
     """
     shared among the ModelTuning scripts
+    Handles cmdline args and config file, returning dict that combines them.
+    Keys:
+    trainingData:	dir path to training data
+    verbose:		boolean - print longer tuning report
+    randForSplit:	int
+    randForClassifier:	int
+    tuningIndexFile:	index file name to write to
+    wIndex:		boolean - write indexfile
+    wPredictions:	boolean - write predictions file
+    predFilePrefix:	filename prefix for the prediction output files
+    indexOfYes:		int
+    indexOfNo:		int
+    gridSearchBeta:	int
+    compareBeta:	int
+    testSplit:		float
+    gridSearchCV:	int
     """
-    global args
+    cp = ConfigParser.ConfigParser()
+    cp.optionxform = str # make keys case sensitive
+
+    # generate a path up multiple parent directories to search for config file
+    cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,6)]]
+    cp.read(cl)
+
+    # config file params that are defaults for command line options
+    TRAINING_DATA     = cp.get     ("DEFAULT", "TRAINING_DATA")
+    TUNING_INDEX_FILE = cp.get     ("MODEL_TUNING", "TUNING_INDEX_FILE")
+    PRED_OUTPUT_FILE_PREFIX = cp.get("MODEL_TUNING", "PRED_OUTPUT_FILE_PREFIX")
 
     parser = argparse.ArgumentParser( \
     description='Run a tuning experiment script.')
@@ -99,32 +109,41 @@ def parseCmdLine():
 			default=None, type=int,
                         help="integer random seed for classifier.")
 
-    parser.add_argument('-i', '--index', dest='index', action='store_true',
+    parser.add_argument('-i', '--index', dest='wIndex', action='store_true',
 			default=False,
                         help='write to index file.')
 
-    parser.add_argument('--noindex', dest='index', action='store_false',
+    parser.add_argument('--noindex', dest='wIndex', action='store_false',
 			default=False,
                         help="don't write to index file (default).")
 
-    parser.add_argument('--indexfile', dest='indexFile', 
+    parser.add_argument('--indexfile', dest='tuningIndexFile', 
 			default=TUNING_INDEX_FILE,
                         help='index file name. Default: %s' % \
 							TUNING_INDEX_FILE)
 
-    parser.add_argument('-p', '--predict', dest='outputPredictions',
+    parser.add_argument('-p', '--predict', dest='wPredictions',
 			action='store_true', default=False,
                         help='write predictions for test & training sets')
 
-    parser.add_argument('--nopredict', dest='outputPredictions',
+    parser.add_argument('--nopredict', dest='wPredictions',
 			action='store_false', default=False,
 	    help="don't write predictions for test & training sets (default)")
 
     parser.add_argument('--predfiles', dest='predFilePrefix', 
 			default=PRED_OUTPUT_FILE_PREFIX,
 	    help='prefix for prediction output filenames. Default: %s' % \
-							PRED_OUTPUT_FILE_PREFIX)
+						    PRED_OUTPUT_FILE_PREFIX)
     args =  parser.parse_args()
+
+    # config params that are not cmdline args (yet)
+    args.indexOfYes      = cp.getint  ("DEFAULT", "INDEX_OF_YES")
+    args.indexOfNo       = cp.getint  ("DEFAULT", "INDEX_OF_NO")
+    args.gridSearchBeta  = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_BETA")
+    args.compareBeta     = cp.getint  ("MODEL_TUNING", "COMPARE_BETA")
+    args.testSplit       = cp.getfloat("MODEL_TUNING", "TEST_SPLIT")
+    args.gridSearchCV    = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_CV")
+
     return args
 # ---------------------------
 # Random seed support:
@@ -159,16 +178,8 @@ def getRandomSeedReport( seedDict ):
         output += "%s=%d   " % (k, seedDict[k])
     return output
 
-# ---------------------------
-# Some basic utilities...
-# ---------------------------
 
-def makeFscorer(beta=GRIDSEARCH_BETA):
-    '''
-    Return an fbeta_score function that scores the 'yes's
-    '''
-    return make_scorer(fbeta_score, beta=beta, pos_label=INDEX_OF_YES)
-
+# ---------------------------
 # Main class
 # ---------------------------
 
@@ -177,52 +188,46 @@ class TextPipelineTuningHelper (object):
     def __init__(self,
 	pipeline,
 	pipelineParameters,
-	beta=GRIDSEARCH_BETA,	# beta=None implies use GRIDSEARCH_BETA
-	cv=GRIDSEARCH_CV,	# number of cross validation folds to use
+	trainingDataDir,
+	testSplit=0.20,		# size of the test set from the dataSet
+	gridSearchBeta=4,	# beta to use in the gridsearch
+	gridSearchCV=5,		# number of cross validation folds to use
 	gsVerbose=1,		# verbose setting for grid search (to stdout)
-	testSize=TEST_SPLIT,	# size of the test set from the dataSet
+	indexOfYes=1,		# index of the "yes" label in the dataset
 	randomSeeds={'randForSplit':1},	# random seeds. Assume all are not None
 	):
 
 	self.pipeline = pipeline
 	self.pipelineParameters = pipelineParameters
 
-	if beta == None: self.gridSearchBeta = GRIDSEARCH_BETA
-	else: self.gridSearchBeta = beta
+	self.gridSearchBeta = gridSearchBeta
+	self.indexOfYes = indexOfYes
+	self.trainingDataDir = trainingDataDir
+
+	scorer = make_scorer(fbeta_score, beta=gridSearchBeta,
+							pos_label=indexOfYes)
 
 	self.gs = GridSearchCV(pipeline,
 				pipelineParameters,
-				scoring=makeFscorer(beta=self.gridSearchBeta),
-				cv=cv,
+				scoring=scorer,
+				cv=gridSearchCV,
 				verbose=gsVerbose,
 				n_jobs=-1,
 				)
-	self.testSize = testSize
+	self.testSplit = testSplit
 	self.randomSeeds = randomSeeds
 	self.randForSplit = randomSeeds['randForSplit']	# required seed
 
 	self.time = getFormattedTime()
 	self.readDataSet()
-	self.findSampleNames()
+	self.computeSampleNames()
     #---------------------
 
-    def getDataDir(self):
-	return args.trainingData
-    # ---------------------------
-
-    def getDataSet(self):
-	return self.dataSet
-    # ---------------------------
-
-    def getSampleNames(self):
-	return self.sampleNames
-    # ---------------------------
-
     def readDataSet(self):
-	self.dataSet = load_files( self.getDataDir() )
+	self.dataSet = load_files( self.trainingDataDir )
     # ---------------------------
 
-    def findSampleNames(self):
+    def computeSampleNames(self):
 	'''
 	Convert list of filenames into Samplenames
 	'''
@@ -247,12 +252,12 @@ class TextPipelineTuningHelper (object):
 					    self.sampleNames,
 					    self.dataSet.data,
 					    self.dataSet.target,
-					    test_size=self.testSize,
+					    test_size=self.testSplit,
 					    random_state=self.randForSplit)
 
 	self.gs.fit( self.docs_train, self.y_train )	# DO THE GRIDSEARCH
 
-	# FIXME: Should implement getter's for these
+	# FIXME: maybe Should implement getter's for these
 	self.bestEstimator  = self.gs.best_estimator_
 	self.bestVectorizer = self.bestEstimator.named_steps['vectorizer']
 	self.bestClassifier = self.bestEstimator.named_steps['classifier']
@@ -266,8 +271,8 @@ class TextPipelineTuningHelper (object):
 
     def getFalsePosNeg( self):
 	'''
-	Return lists of (sample names of) false positives and false negatives in
-	    a test set
+	Return lists of (sample names of) false positives and false negatives
+	    in a test set
 	'''
 	y_true      = self.y_test
 	y_predicted = self.y_predicted_test
@@ -286,24 +291,32 @@ class TextPipelineTuningHelper (object):
 	return falsePositives, falseNegatives
     # ---------------------------
 
-    def getReports(self, nFeaturesReport=10, nFalsePosNegReport=5,
-		    nTopFeatures=20,
+    def getReports(self,
+		    nFeaturesReport=10,		# in features report
+		    nFalsePosNegReport=5,	# for false pos/neg rpt
+		    nTopFeatures=20,		# num of top weighted to rpt
+		    wIndex=False,		# write tuningIndex file
+		    tuningIndexFile='index.out',
+		    wPredictions=False,		# write predictions file
+		    predFilePrefix='predictions',
+		    compareBeta=4,	# Fbeta to report in tuningindex file
+		    verbose=False,
 	):
 
-	if args.index: self.writeIndexFile()
-	if args.outputPredictions: self.writePredictions()
+	if wIndex: self.writeIndexFile(tuningIndexFile, compareBeta)
+	if wPredictions: self.writePredictions(predFilePrefix)
 
 	output = getReportStart(self.time,self.gridSearchBeta,self.randomSeeds,
-				self.getDataDir(), args.index, args.indexFile)
+				self.trainingDataDir, wIndex, tuningIndexFile)
 
 	output += getFormattedMetrics("Training Set", self.y_train,
-					self.y_predicted_train, COMPARE_BETA)
+				    self.y_predicted_train, compareBeta)
 	output += getFormattedMetrics("Test Set", self.y_test,
-					self.y_predicted_test, COMPARE_BETA)
+				    self.y_predicted_test, compareBeta)
 	output += getBestParamsReport(self.gs, self.pipelineParameters)
 	output += getGridSearchReport(self.gs, self.pipelineParameters)
 
-	if args.verbose: 
+	if verbose: 
 	    output += getTopFeaturesReport( \
 		    getOrderedFeatures(self.bestVectorizer,self.bestClassifier),
 		    nTopFeatures) 
@@ -315,14 +328,14 @@ class TextPipelineTuningHelper (object):
 	    output += getFalsePosNegReport( falsePos, falseNeg,
 						num=nFalsePosNegReport)
 
-	    output += getTrainTestSplitReport(self.dataSet.target, self.y_train,
-						self.y_test, self.testSize)
+	    output += getTrainTestSplitReport(self.dataSet.target,self.y_train,
+						self.y_test, self.testSplit)
 
 	output += getReportEnd()
 	return output
 # ---------------------------
 
-    def writeIndexFile(self):
+    def writeIndexFile(self, tuningIndexFile, compareBeta):
 	'''
 	Handle writing a one-line summary of this run to an index file
 	'''
@@ -332,25 +345,25 @@ class TextPipelineTuningHelper (object):
 	if len(sys.argv) > 0: tuningFile = sys.argv[0]
 	else: tuningFile = ''
 
-	with open(args.indexFile, 'a') as fp:
+	with open(tuningIndexFile, 'a') as fp:
 	    fp.write("%s\tPRF%d,F1\t%4.2f\t%4.2f\t%4.2f\t%4.2f\t%s\n" % \
 	    (self.time,
-	    COMPARE_BETA,
-	    precision_score( y_true, y_predicted, pos_label=INDEX_OF_YES),
-	    recall_score( y_true, y_predicted, pos_label=INDEX_OF_YES),
-	    fbeta_score( y_true, y_predicted, COMPARE_BETA,
-						    pos_label=INDEX_OF_YES), 
-	    fbeta_score( y_true, y_predicted, 1, pos_label=INDEX_OF_YES), 
+	    compareBeta,
+	    precision_score( y_true, y_predicted, pos_label=self.indexOfYes),
+	    recall_score( y_true, y_predicted, pos_label=self.indexOfYes),
+	    fbeta_score( y_true, y_predicted, compareBeta,
+						    pos_label=self.indexOfYes), 
+	    fbeta_score( y_true, y_predicted, 1, pos_label=self.indexOfYes), 
 	    tuningFile,
 	    ) )
 # ---------------------------
 
-    def writePredictions(self):
+    def writePredictions(self, predFilePrefix):
 	'''
 	Write files with predictions from training set and test set
 	'''
 	writePredictionFile( \
-	    args.predFilePrefix + "_train.out",
+	    predFilePrefix + "_train.out",
 	    self.bestEstimator,
 	    self.docs_train,
 	    self.sampleNames_train,
@@ -358,7 +371,7 @@ class TextPipelineTuningHelper (object):
 	    self.y_predicted_train,
 	    )
 	writePredictionFile( \
-	    args.predFilePrefix + "_test.out",
+	    predFilePrefix + "_test.out",
 	    self.bestEstimator,
 	    self.docs_test,
 	    self.sampleNames_test,
@@ -423,10 +436,10 @@ def predictionType(trueY, predY):
 # ---------------------------
 SSTART = "### "			# output section start delimiter
 
-def getReportStart( curtime, beta, randomSeeds,dataDir, index, indexFile):
+def getReportStart(curtime,beta, randomSeeds,dataDir, wIndex, tuningIndexFile):
 
     output = SSTART + "Start Time %s  %s" % (curtime, sys.argv[0])
-    if index: output += "\tindex file: %s" % indexFile
+    if wIndex: output += "\tindex file: %s" % tuningIndexFile
     output += "\n"
     output += "Data dir: %s,\tGridSearch Beta: %d\n" % (dataDir, beta)
     output += getRandomSeedReport(randomSeeds)
@@ -442,13 +455,13 @@ def getTrainTestSplitReport( \
 	y_all,
 	y_train,
 	y_test,
-	testSize
+	testSplit
 	):
     '''
     Report on the sizes and makeup of the training and test sets
     FIXME:  this is very yucky code...
     '''
-    output = SSTART + 'Train Test Split Report, test %% = %4.2f\n' % (testSize)
+    output = SSTART+ 'Train Test Split Report, test %% = %4.2f\n' % (testSplit)
     output += \
     "All Samples: %6d\tTraining Samples: %6d\tTest Samples: %6d\n" \
 		    % (len(y_all), len(y_train), len(y_test))
@@ -544,7 +557,8 @@ def getFormattedMetrics( \
 	title,		# string title
 	y_true,		# true category assignments
 	y_predicted,	# predicted assignments
-	beta    	# for the fbeta_score
+	beta,		# for the fbeta_score
+	indexOfYes=1	# index of the "yes" label
 	):
     '''
     Return formated metrics report
@@ -563,7 +577,7 @@ def getFormattedMetrics( \
 		    ) # only report on first label: "yes"
     output += "%s F%d: %5.3f\n\n" % (title[:5],beta,
 				fbeta_score( y_true, y_predicted, beta,
-					     pos_label=INDEX_OF_YES ) )
+					     pos_label=indexOfYes ) )
     output += "%s\n" % getFormattedCM(y_true, y_predicted)
 
     return output
