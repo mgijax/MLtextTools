@@ -282,7 +282,7 @@ class TextPipelineTuningHelper (object):
 	falseNegatives = []
 
 	for trueY, predY, name in zip(y_true, y_predicted, sampleNames):
-	    predType = predictionType(trueY, predY)
+	    predType = skhelper.predictionType(trueY, predY)
 	    if predType == 'FP':
 		falsePositives.append(name)
 	    elif predType == 'FN':
@@ -395,7 +395,7 @@ def writePredictionFile( \
     Prediction file has a line for each doc,
 	samplename, y_true, y_predicted, FP/FN, [confidence, abs value]
     '''
-    predTypes = [ predictionType(t,p) for t,p in zip(y_true, y_predicted) ]
+    predTypes = [skhelper.predictionType(t,p) for t,p in zip(y_true,y_predicted)]
     
     if hasattr(estimator, "decision_function"):
 	conf = estimator.decision_function(docs).tolist()
@@ -421,16 +421,6 @@ def writePredictionFile( \
     return
 # ---------------------------
 
-def predictionType(trueY, predY):
-    '''
-    Return 'FP', 'FN' or '' depending on trueY and predY.
-    Assumes trueY and predY are (scalar) values 0 or 1
-    '''
-    retVal = ''
-    if trueY != predY:
-	if predY == 1: retVal = 'FP'
-	else: retVal = 'FN'
-    return retVal
 # ---------------------------
 # Functions to format output reports
 # ---------------------------

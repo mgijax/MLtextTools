@@ -20,6 +20,20 @@ def removeNonAscii(text):
     return ''.join([i if ord(i) < 128 else ' ' for i in text])
 #-----------------------------------
 
+def predictionType(trueY, predY):
+    '''
+    Return 'FP', 'FN', 'TP', or 'TN' depending on trueY and predY.
+    Assumes trueY and predY are (scalar) values 0 or 1 or 'yes'/'no'
+    '''
+    if trueY == predY:
+	if predY == 1 or predY == 'yes': retVal = "TP"
+        else: retVal = 'TN'
+    else:
+        if predY == 1 or predY == 'yes': retVal = 'FP'
+        else: retVal = 'FN'
+    return retVal
+# ---------------------------
+
 # ---------------------------
 # Probably best to preprocess the whole data set once
 #  and stem it (and remove URLs) if stemming makes a big enough difference.
