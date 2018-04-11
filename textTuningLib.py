@@ -137,12 +137,13 @@ def parseCmdLine():
     args =  parser.parse_args()
 
     # config params that are not cmdline args (yet)
-    args.indexOfYes      = cp.getint  ("DEFAULT", "INDEX_OF_YES")
-    args.indexOfNo       = cp.getint  ("DEFAULT", "INDEX_OF_NO")
+    args.indexOfYes      = cp.getint  ("DEFAULT",      "INDEX_OF_YES")
+    args.indexOfNo       = cp.getint  ("DEFAULT",      "INDEX_OF_NO")
     args.gridSearchBeta  = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_BETA")
     args.compareBeta     = cp.getint  ("MODEL_TUNING", "COMPARE_BETA")
     args.testSplit       = cp.getfloat("MODEL_TUNING", "TEST_SPLIT")
     args.gridSearchCV    = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_CV")
+    args.classNames      = eval(cp.get("DEFAULT",      "CLASS_NAMES"))
 
     return args
 # ---------------------------
@@ -301,10 +302,11 @@ class TextPipelineTuningHelper (object):
 		    predFilePrefix='predictions',
 		    compareBeta=4,	# Fbeta to report in tuningindex file
 		    verbose=False,
+		    classNames=['no','yes'] # map class indexes to names
 	):
 
 	if wIndex: self.writeIndexFile(tuningIndexFile, compareBeta)
-	if wPredictions: self.writePredictions(predFilePrefix)
+	if wPredictions: self.writePredictions(predFilePrefix, classNames)
 
 	output = getReportStart(self.time,self.gridSearchBeta,self.randomSeeds,
 				self.trainingDataDir, wIndex, tuningIndexFile)
@@ -358,7 +360,7 @@ class TextPipelineTuningHelper (object):
 	    ) )
 # ---------------------------
 
-    def writePredictions(self, predFilePrefix):
+    def writePredictions(self, predFilePrefix, classNames):
 	'''
 	Write files with predictions from training set and test set
 	'''
@@ -369,6 +371,7 @@ class TextPipelineTuningHelper (object):
 	    self.sampleNames_train,
 	    self.y_train,
 	    self.y_predicted_train,
+	    classNames=classNames,
 	    )
 	writePredictionFile( \
 	    predFilePrefix + "_test.out",
@@ -377,6 +380,7 @@ class TextPipelineTuningHelper (object):
 	    self.sampleNames_test,
 	    self.y_test,
 	    self.y_predicted_test,
+	    classNames=classNames,
 	    )
 # ---------------------------
 # end class TextPipelineTuningHelper
@@ -389,6 +393,7 @@ def writePredictionFile( \
     sampleNames,	# sample names for those docs
     y_true,		# true labels/classifications for those docs 0|1
     y_predicted,	# predicted labels/classifications for those docs 0|1
+    classNames=['no','yes'],
     ):
     '''
     Write a prediction file, with confidence values if available.
@@ -397,22 +402,25 @@ def writePredictionFile( \
     '''
     predTypes = [skhelper.predictionType(t,p) for t,p in zip(y_true,y_predicted)]
     
+    trueNames = [ classNames[y] for y in y_true ]
+    predNames = [ classNames[y] for y in y_predicted ]
+
     if hasattr(estimator, "decision_function"):
 	conf = estimator.decision_function(docs).tolist()
 	absConf = map(abs, conf)
 	predictions = \
-	    zip(sampleNames, y_true, y_predicted, predTypes, conf, absConf)
+	    zip(sampleNames, trueNames, predNames, predTypes, conf, absConf)
 
 	selConf = lambda x: x[5]	# select confidence value 
 	predictions = sorted(predictions, key=selConf)
 
-	header = "Sample\tTrue\tPrediction\tFP/FN\tConfidence\tAbs value\n"
-	template = "%s\t%d\t%d\t%s\t%5.3f\t%5.3f\n"
+	header = "ID\tTrue Class\tPred Class\tFP/FN\tConfidence\tAbs Value\n"
+	template = "%s\t%s\t%s\t%s\t%5.3f\t%5.3f\n"
     else:			# no confidence values available
-	predictions = zip(sampleNames, y_true, y_predicted, predTypes)
+	predictions = zip(sampleNames, trueNames, predNames, predTypes)
 
-	header = "Sample\tTrue\tPrediction\FP/FN\n"
-	template = "%s\t%d\t%d\t%s\n"
+	header = "ID\tTrue Class\tPred Class\FP/FN\n"
+	template = "%s\t%s\t%s\t%s\n"
 
     with open(fileName, 'w') as fp:
 	fp.write(header)

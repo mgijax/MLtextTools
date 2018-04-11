@@ -47,4 +47,5 @@ print p.getReports(wIndex=args.wIndex,
 		    predFilePrefix=args.predFilePrefix,
 		    compareBeta=args.compareBeta,
 		    verbose=args.verbose,
+		    classNames=args.classNames,
 		    )
