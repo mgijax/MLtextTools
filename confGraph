@@ -1,0 +1,45 @@
+#!/bin/bash
+# Run R to generate confidence distribution graphs
+# There is probably a better way to run an R script and generate graphs,
+#   but this is the way I've figured out for now. Not terribly clean....
+
+function Usage() {
+    cat - <<ENDTEXT
+
+$0 [-o outputfile] prediction_file
+
+    Generate a PDF file containing a confidence distribution for a file of
+    predictions
+    FIXME: need to add a param to tell which kind of graph to create
+ENDTEXT
+    exit 5
+}
+if [ $# -eq 0 ]; then Usage; fi
+output=""
+confScript=$(which confDistribution.R)	# find R script to run, assumes it's +x
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+    -h|--help) Usage ;;
+    -o|--output) output="$2" ; shift; shift; ;;
+    -*|--*) echo "invalid option $1"; Usage ;;
+    *) input="$1"; shift; break; ;;
+    esac
+done
+echo output: $output
+if [ "$output" = "" ]; then		# no output specified
+    base=$(basename -s .tsv ${input})
+    output=${base}_confidence.pdf
+    echo default output $output
+fi
+
+# FIXME: should verify that the input file exists
+
+Rscript --no-save - <<ENDR
+source("$confScript")
+quartz()
+graphConfTrueAndPred("$input")
+quartz.save("$output", type="pdf")
+ENDR
+open ${output}
+exit
