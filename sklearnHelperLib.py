@@ -9,6 +9,7 @@ Convention: trying to use camelCase for all the names here, but
 SEE NOTES ON STEMMING AT THE BOTTOM OF THIS FILE...
 '''
 import sys
+import os.path
 import re
 import string
 
@@ -16,6 +17,20 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 import nltk.stem.snowball as nltk
 
 #-----------------------------------
+def importPyFile(pyFile):
+    ''' Given a python file pathname (w/ or w/o .py), import the file
+        as a module
+    '''
+    pyDir, pyFile = os.path.split(pyFile)
+    if pyFile.endswith('.py'): pyFile = pyFile[:-3]
+
+    if pyDir != '': sys.path.insert(0, pyDir)
+    myModule =  __import__(pyFile)
+    if pyDir != '': del sys.path[0]
+
+    return myModule
+#-----------------------------------
+
 def removeNonAscii(text):
     return ''.join([i if ord(i) < 128 else ' ' for i in text])
 #-----------------------------------

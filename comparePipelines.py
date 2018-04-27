@@ -9,36 +9,28 @@
 import sys
 import time
 import argparse
-from ConfigParser import ConfigParser
+import sklearnHelperLib
 from sklearn.datasets import load_files
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_recall_fscore_support, f1_score
 
 #-----------------------------------
-cp = ConfigParser()
-#cp.optionxform = str # make keys case sensitive
-cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,6)]]
-cp.read(cl)
-
-TRAINING_DATA = cp.get("DEFAULT", "TRAINING_DATA")
-BETA          = cp.getint("MODEL_TUNING", "COMPARE_BETA")
-INDEX_OF_YES  = cp.getint("DEFAULT", "INDEX_OF_YES")
-
-#----------------------
 
 def parseCmdLine():
     # Defaults
     NUMSPLITS     = '5'
     TESTSIZE      = '20'
     PIPELINE_DEFS = 'goodPipelines.py'
+    BETA          = 4
+    LABEL         = 'yes'
 
     parser = argparse.ArgumentParser(description = \
     'Compare pipelines over mult train_test_splits. Write output to stdout.')
 
     parser.add_argument('-d', '--data', dest='trainingData', action='store', 
-        required=False, default=TRAINING_DATA,
-        help='Directory where training data files live. Default: %s' \
-						    % TRAINING_DATA)
+        required=True,
+        help='Directory where training data files live.' )
+
     parser.add_argument('-p','--pipelines',dest='pipelineDefs', action='store',
         required=False, default=PIPELINE_DEFS,
         help= \
@@ -52,10 +44,19 @@ def parseCmdLine():
         required=False, default=TESTSIZE,
         help='percent of samples to use for test set. Default: %s' % TESTSIZE)
 
+    parser.add_argument('-b','--beta',dest='beta', action='store',
+        required=False, default=BETA,
+        help='integer beta to report in comparisons. Default: %d' % BETA)
+
+    parser.add_argument('--label',dest='label', action='store',
+        required=False, default=LABEL,
+        help='compute comparison metrics for this label/category. Default: %s' % LABEL)
+
     parser.add_argument('--vote',dest='vote', action='store_true',
         required=False, help='include a vote of all the pipelines.')
 
     args = parser.parse_args()
+    args.beta = int(args.beta)
     args.numSplits = int(args.numSplits)
     args.testSize = float(args.testSize)/100.0
     return args
@@ -64,11 +65,9 @@ def parseCmdLine():
 def main():
     # Could/should refactor this whole thing
     args = parseCmdLine()
-    pyFile = args.pipelineDefs
-    if pyFile.endswith('.py'): pyFile = pyFile[:-3]
 
-    pipelineModule = __import__(pyFile)
-    pipelines = pipelineModule.pipelines
+    myModule = sklearnHelperLib.importPyFile(args.pipelineDefs)
+    pipelines = myModule.pipelines
 
     if type(pipelines) != type([]): 
 	pipelines = [ pipelines ]
@@ -89,6 +88,7 @@ def main():
     af="Average. %d:   F1: %5.3f   F%d: %5.3f   Precision: %4.2f   Recall: %4.2f"
 
     dataSet = load_files( args.trainingData )
+    labelIndex = dataSet['target_names'].index(args.label)
 
     for sp in range(args.numSplits):
 	docs_train, docs_test, y_train, y_test = \
@@ -106,27 +106,27 @@ def main():
 
 	    precision, recall, fscore, support = \
 			    precision_recall_fscore_support( \
-							y_test, y_pred, BETA,
-							pos_label=INDEX_OF_YES,
-							average='binary')
-	    f1 = f1_score(y_test, y_pred, pos_label=INDEX_OF_YES,
+						y_test, y_pred, args.beta,
+						pos_label=labelIndex,
+						average='binary')
+	    f1 = f1_score(y_test, y_pred, pos_label=labelIndex,
 							average='binary')
 	    pipelineTotals[i]['fscores']    += fscore
 	    pipelineTotals[i]['f1']	    += f1
 	    pipelineTotals[i]['precisions'] += precision
 	    pipelineTotals[i]['recalls']    += recall
 
-	    l = pf % (i, f1, BETA, fscore, precision, recall)
+	    l = pf % (i, f1, args.beta, fscore, precision, recall)
 	    print l
 
 	if args.vote:
 	    vote_pred = y_vote( predictions )
 	    precision, recall, fscore, support = \
 				precision_recall_fscore_support( \
-						    y_test, vote_pred, BETA,
-						    pos_label=INDEX_OF_YES,
-						    average='binary')
-	    f1 = f1_score(y_test, vote_pred, pos_label=INDEX_OF_YES,
+						y_test, vote_pred, args.beta,
+						pos_label=labelIndex,
+						average='binary')
+	    f1 = f1_score(y_test, vote_pred, pos_label=labelIndex,
 							average='binary')
 	    i = len(pipelines)
 	    pipelineTotals[i]['fscores']    += fscore
@@ -134,7 +134,7 @@ def main():
 	    pipelineTotals[i]['precisions'] += precision
 	    pipelineTotals[i]['recalls']    += recall
 
-	    l = vf % (i , f1, BETA, fscore, precision, recall)
+	    l = vf % (i , f1, args.beta, fscore, precision, recall)
 	    print l
     # averages across all the Splits
     print
@@ -143,7 +143,7 @@ def main():
 	avgF1        = pipelineTotals[i]['f1']         / args.numSplits
 	avgPrecision = pipelineTotals[i]['precisions'] / args.numSplits
 	avgRecall    = pipelineTotals[i]['recalls']    / args.numSplits
-	l = af % (i, avgF1, BETA, avgFscore, avgPrecision, avgRecall)
+	l = af % (i, avgF1, args.beta, avgFscore, avgPrecision, avgRecall)
 	print l
 
     # pipeline info
