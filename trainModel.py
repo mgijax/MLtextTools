@@ -10,8 +10,6 @@
 #   also write a top weighted feature report after training.
 #
 import sys
-sys.path.append('..')
-from ConfigParser import ConfigParser
 import argparse
 import pickle
 
