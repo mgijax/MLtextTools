@@ -14,6 +14,7 @@ import argparse
 import pickle
 
 import textTuningLib as tl
+import sklearnHelperLib
 from sklearn.datasets import load_files
 from sklearn.pipeline import Pipeline
 #-----------------------
@@ -53,10 +54,8 @@ def process():
     args = parseCmdLine()
 
     pyFile = args.pipelineFile
-    if pyFile.endswith('.py'): pyFile = pyFile[:-3]
 
-    pipelineModule = __import__(pyFile)
-    pipeline = pipelineModule.pipelines
+    pipeline = sklearnHelperLib.importPyFile(pyFile).pipelines
 
     if type(pipeline) == type([]):
         pipeline = pipeline[0]
