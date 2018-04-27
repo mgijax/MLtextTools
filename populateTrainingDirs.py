@@ -17,22 +17,17 @@ import sys
 import string
 import os
 import argparse
-import ConfigParser
 
 sys.path.extend( ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] )
 import sampleDataLib as sdLib
 
-#-----------------------------------
-cp = ConfigParser.ConfigParser()
-cp.optionxform = str # make keys case sensitive
-cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,6)]]
-cp.read(cl)
-RECORDSEP = eval(cp.get("DEFAULT", "RECORDSEP"))
 #----------------------
 
 def parseCmdLine():
+    RECORDSEP = '\n'	# default record separator in the training data file
+
     parser = argparse.ArgumentParser( \
-    description='Splits text training data into sklearn directory structure')
+    description='Converts training data files into sklearn directory structure')
 
     parser.add_argument('inputFiles', nargs=argparse.REMAINDER,
         help='files of samples')
@@ -43,7 +38,7 @@ def parseCmdLine():
 
     parser.add_argument('-r', '--recordsep', dest='recordsep',
         action='store', default=RECORDSEP,
-        help="sample record separator string. Default from config" )
+        help="sample record separator string. Default is \\n" )
 
     parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
         required=False, help="skip helpful messages to stderr")
