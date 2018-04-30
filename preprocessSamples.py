@@ -20,18 +20,8 @@ import string
 import os
 import time
 import argparse
-import ConfigParser
-cp = ConfigParser.ConfigParser()
-cp.optionxform = str # make keys case sensitive
-cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,8)]]
-cp.read(cl)
-RECORDSEP     = eval(cp.get("DEFAULT", "RECORDSEP"))
-
-sys.path.extend( ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] )
-from sampleDataLib import SampleRecord
 
 #-----------------------------------
-PREPROCESSORS = eval(cp.get("DEFAULT", "PREPROCESSORS"))
 
 def parseCmdLine():
     parser = argparse.ArgumentParser( \
@@ -42,19 +32,16 @@ def parseCmdLine():
 
     parser.add_argument('-p', '--preprocessor', metavar='PREPROCESSOR',
 	dest='preprocessors', action='append', required=False, default=[],
-    	help='preprocessor method name, multiples are applied in order. Default is none. -p default uses config file.' )
+    	help='preprocessor method name in sampleDataLib.SampleRecord, multiples are applied in order. Default is none.' )
 
     parser.add_argument('-r', '--recordsep', dest='recordsep',
-	action='store', default=RECORDSEP,
-    	help="sample record separator string. Default from config" )
+	action='store', default='\n',
+    	help="sample record separator string. Default \\n" )
 
     parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
 	required=False, help="skip helpful messages to stderr")
 
     args = parser.parse_args()
-
-    if len(args.preprocessors) == 1 and args.preprocessors[0] == 'default':
-	args.preprocessors = PREPROCESSORS
 
     return args
 #----------------------
@@ -63,11 +50,15 @@ def parseCmdLine():
 def main():
     args = parseCmdLine()
 
+    # extend path up multiple parent dirs, hoping we can import sampleDataLib
+    sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
+    from sampleDataLib import SampleRecord
+
     if args.verbose:
 	sys.stderr.write("Preprocessing steps: %s\n" % \
 					' '.join(args.preprocessors)) 
     counts = { 'samples':0, 'skipped':0}
-    headerLine = None
+    headerLine = None		# None until we read the 1st header line
     startTime = time.time()
 
     for fn in args.inputFiles:
@@ -81,15 +72,15 @@ def main():
 	    headerLine = lines[0]
 	    sys.stdout.write(headerLine + args.recordsep)
 
-	del lines[0]			# header line
+	del lines[0]			# delete header line 
 	for line in lines:
 	    counts['samples'] += 1
-	    if args.verbose and (counts['samples'] % 100 == 0) :
+	    if args.verbose and (counts['samples'] % 100 == 0):# print every 100
 		sys.stderr.write("%d.." % counts['samples'] )
-	    sr = SampleRecord(line)
 
+	    sr = SampleRecord(line)
 	    for pp in args.preprocessors:
-		sr = getattr(sr,pp)()
+		sr = getattr(sr,pp)()	# call preprocessor method on sr
 
 	    if sr.isReject():
 		if args.verbose:
@@ -97,11 +88,12 @@ def main():
 			    (sr.getRejectReason(), sr.getSampleName()) )
 		counts['skipped'] += 1
 	    else: sys.stdout.write(sr.getSampleAsText() + args.recordsep)
+
     if args.verbose:
 	sys.stderr.write("Samples processed: %d \t Samples skipped: %d\n" % \
 			    (counts['samples'], counts['skipped']) )
 	sys.stderr.write( "Total time: %8.3f seconds\n\n" % \
 						    (time.time()-startTime))
-#
+# ---------------------
 if __name__ == "__main__":
     main()
