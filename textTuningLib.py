@@ -82,7 +82,7 @@ def parseCmdLine():
     cp.optionxform = str # make keys case sensitive
 
     # generate a path up multiple parent directories to search for config file
-    cl = ['.']+['/'.join(l)+'/config.cfg' for l in [['..']*i for i in range(1,6)]]
+    cl = ['/'.join(l)+'/config.cfg' for l in [['.']]+[['..']*i for i in range(1,6)]]
     cp.read(cl)
 
     # config file params that are defaults for command line options
