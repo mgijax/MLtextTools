@@ -34,10 +34,6 @@ def parseCmdLine():
 	dest='preprocessors', action='append', required=False, default=[],
     	help='preprocessor method name in sampleDataLib.SampleRecord, multiples are applied in order. Default is none.' )
 
-    parser.add_argument('-r', '--recordsep', dest='recordsep',
-	action='store', default='\n',
-    	help="sample record separator string. Default \\n" )
-
     parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
 	required=False, help="skip helpful messages to stderr")
 
@@ -52,25 +48,26 @@ def main():
 
     # extend path up multiple parent dirs, hoping we can import sampleDataLib
     sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
-    from sampleDataLib import SampleRecord
+    import sampleDataLib
 
     if args.verbose:
 	sys.stderr.write("Preprocessing steps: %s\n" % \
 					' '.join(args.preprocessors)) 
+    recordSep = sampleDataLib.RECORDSEP
     counts = { 'samples':0, 'skipped':0}
-    headerLine = None		# None until we read the 1st header line
+    headerLine = None		# None until we read 1st header line in 1st file
     startTime = time.time()
 
     for fn in args.inputFiles:
 
 	if args.verbose:
 	    sys.stderr.write("Reading %s\n" % fn)
-	lines = open(fn,'r').read().split(args.recordsep)
+	lines = open(fn,'r').read().split(recordSep)
 	del lines[-1]			# empty line at end after split
 
 	if not headerLine:		# print header only @ start of 1st file
 	    headerLine = lines[0]
-	    sys.stdout.write(headerLine + args.recordsep)
+	    sys.stdout.write(headerLine + recordSep)
 
 	del lines[0]			# delete header line 
 	for line in lines:
@@ -78,7 +75,7 @@ def main():
 	    if args.verbose and (counts['samples'] % 100 == 0):# print every 100
 		sys.stderr.write("%d.." % counts['samples'] )
 
-	    sr = SampleRecord(line)
+	    sr = sampleDataLib.SampleRecord(line)
 	    for pp in args.preprocessors:
 		sr = getattr(sr,pp)()	# call preprocessor method on sr
 
@@ -87,7 +84,7 @@ def main():
 		    sys.stderr.write("%s, %s skipped\n" % \
 			    (sr.getRejectReason(), sr.getSampleName()) )
 		counts['skipped'] += 1
-	    else: sys.stdout.write(sr.getSampleAsText() + args.recordsep)
+	    else: sys.stdout.write(sr.getSampleAsText())
 
     if args.verbose:
 	sys.stderr.write("Samples processed: %d \t Samples skipped: %d\n" % \

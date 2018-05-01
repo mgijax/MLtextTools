@@ -17,15 +17,9 @@ import sys
 import string
 import os
 import argparse
-
-sys.path.extend( ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] )
-import sampleDataLib as sdLib
-
 #----------------------
 
 def parseCmdLine():
-    RECORDSEP = '\n'	# default record separator in the training data file
-
     parser = argparse.ArgumentParser( \
     description='Converts training data files into sklearn directory structure')
 
@@ -36,10 +30,6 @@ def parseCmdLine():
 	required=False, default='.',
     	help='parent dir for /no and /yes. Default=%s' % '.')
 
-    parser.add_argument('-r', '--recordsep', dest='recordsep',
-        action='store', default=RECORDSEP,
-        help="sample record separator string. Default is \\n" )
-
     parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
         required=False, help="skip helpful messages to stderr")
 
@@ -48,9 +38,11 @@ def parseCmdLine():
     return args
 #----------------------
 
-# Main prog
 def main():
     args = parseCmdLine()
+
+    sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
+    import sampleDataLib
 
     for yesNo in ['yes', 'no']:
 	dirname =  os.sep.join( [ args.outputDir, yesNo ] )
@@ -58,16 +50,17 @@ def main():
 	    os.makedirs(dirname)
 
     counts = { 'yes':0, 'no':0,}
+
     for fn in args.inputFiles:
 	if args.verbose:
             sys.stderr.write("Reading %s\n" % fn)
 
-        lines = open(fn,'r').read().split(args.recordsep)
+        lines = open(fn,'r').read().split(sampleDataLib.RECORDSEP)
 	del lines[-1]			# empty string at end of split
 	del lines[0]			# header line
 	for line in lines:
 
-	    sample = sdLib.SampleRecord(line)
+	    sample = sampleDataLib.SampleRecord(line)
 	    
 	    yesNo = sample.getKnownClassName()
 	    counts[yesNo] += 1
