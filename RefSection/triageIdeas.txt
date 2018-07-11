@@ -1,0 +1,11 @@
+extracted text search for QTL? - auto tagging?
+
+A&P searching for disease models - use disease name entity recognition
+    look up the disease term and see if we have other models
+    or if this would be first model
+    or at least auto tag as disease paper
+    maybe only in title and abstract?:wq
+ 
+
+Similar, find genes, look to see if this is newly phenotyped gene
+

@@ -10,7 +10,7 @@ __pycache__/
 venv/
 ENV/
 
-Data/
+Data*/
 cache/
 *.ipynb_checkpoints
 *.swp
