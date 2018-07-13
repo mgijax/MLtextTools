@@ -138,15 +138,16 @@ def main ():
     # output the comparisons
     for ID, p0 in preds0.items():	# go through all the preds0 predictions
 	p1 = preds1.get(ID, None)	# ID could be in p1 or not
-	columns = getComparisonColumns(hasEvaluations, p0, p1)
-	line = OUTPUT_FD.join( columns )
-	outFile.write(line + OUTPUT_RD)
-	preds1.pop(ID,None)		# remove IDs from p1 as we go
-
-    for ID, p1 in preds1.items():	# go through remaining p1 predictions
-	columns = getComparisonColumns(hasEvaluations, None, p1)
-	line = OUTPUT_FD.join( columns )
-	outFile.write(line + OUTPUT_RD)
+	if p1 != None:
+	    columns = getComparisonColumns(hasEvaluations, p0, p1)
+	    line = OUTPUT_FD.join( columns )
+	    outFile.write(line + OUTPUT_RD)
+#	preds1.pop(ID,None)		# remove IDs from p1 as we go
+#
+#    for ID, p1 in preds1.items():	# go through remaining p1 predictions
+#	columns = getComparisonColumns(hasEvaluations, None, p1)
+#	line = OUTPUT_FD.join( columns )
+#	outFile.write(line + OUTPUT_RD)
 
 # ----------------------------------
 def getComparisonColumns( hasEvaluations, p0, p1 ):
@@ -162,11 +163,13 @@ def getComparisonColumns( hasEvaluations, p0, p1 ):
 		    str(p0.nCharsAfter),
 		    str(p0.percentAfter)
 		    ]
-	if hasEvaluations[0]: columns += [ p0.evaluation, ]
+	if hasEvaluations[0]:
+	    columns += [ p0.evaluation, ]
+	    columns += [ p0.reason, ]
 	journal = p0.journal		# remember journal name
     else:		# no p0
 	columns = [ str(p1.ID), str(p1.docLen), '', '', '', ]
-	if hasEvaluations[0]: columns += [ '', ]
+	if hasEvaluations[0]: columns += [ '','' ]
 
     if p0 == None or p1 == None:	# nothing to compare
 	columns += [ '' ]
@@ -179,11 +182,13 @@ def getComparisonColumns( hasEvaluations, p0, p1 ):
 	    str(p1.nCharsAfter),
 	    str(p1.percentAfter), 
 	    ]
-	if hasEvaluations[1]: columns += [ p1.evaluation, ]
+	if hasEvaluations[1]:
+	    columns += [ p1.evaluation, ]
+	    columns += [ p1.reason, ]
 	journal = p1.journal		# remember journal name
     else:		# no p1
 	columns += [ '', '', '', '' ]
-	if hasEvaluations[1]: columns += [ '' ]
+	if hasEvaluations[1]: columns += [ '','' ]
 
     columns += [ journal ]
 
@@ -199,7 +204,7 @@ def getColumnHeaders( hasEvaluations):
 	"P0 Num chars after",
 	"P0 Percent after", 
 	]
-    if hasEvaluations[0]: columns += [ "P0 Eval", ]
+    if hasEvaluations[0]: columns += [ "P0 Eval", "P0 Reason" ]
 
     columns += [ "Comparison" ]
 
@@ -208,7 +213,7 @@ def getColumnHeaders( hasEvaluations):
 	"P1 Num chars after",
 	"P1 Percent after", 
 	]
-    if hasEvaluations[1]: columns += [ "P1 Eval", ]
+    if hasEvaluations[1]: columns += [ "P1 Eval", "P1 Reason"]
 
     columns += [ "Journal" ]
     return columns
