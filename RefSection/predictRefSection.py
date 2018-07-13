@@ -28,13 +28,21 @@ import refSectionLib
 
 def getArgs():
     parser = argparse.ArgumentParser( \
-                    description='Predict extracted text Reference Sections')
+	description= \
+	'''
+	Predict Reference Sections from (extracted) text files.
+	To stdout, write one line per file describing the predicted ref section.
+	''')
 
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
         required=False, help="messages to stderr")
 
     parser.add_argument('dirNames', nargs=argparse.REMAINDER,
-	help="directory names holding extracted text files to analyze")
+	help= \
+	'''
+	directory names holding text files to predict.
+	Typically these files would be named by PubMed ID.
+	''')
 
     args =  parser.parse_args()
 
