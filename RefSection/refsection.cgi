@@ -143,7 +143,7 @@ def buildPage(params):
 
     form = ['''
 	    <DIV CLASS="search">
-	    <FORM ACTION="refsection3.cgi" METHOD="GET">
+	    <FORM ACTION="refsection.cgi" METHOD="GET">
 	    <B>PubMed ID </B>
 	    <INPUT NAME="pubmed" TYPE="text" SIZE="25" autofocus>
 	    <INPUT TYPE="submit" VALUE="Go">
