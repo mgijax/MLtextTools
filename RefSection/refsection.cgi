@@ -6,25 +6,17 @@
 # removal.
 
 import sys
-#sys.path.insert(0, '/home/jsb/jax/prod/lib/python')
-#sys.path.insert(0, '/usr/local/lib/python2.4')
-#sys.path.insert(0, '/usr/local/mgi/lib/python')
-sys.path.insert(0, '/home/jak/lib/python/mgi')
 #import httpReader
 import string
 import cgi
 import os
+#sys.path.insert(0, '/home/jsb/jax/prod/lib/python')
+#sys.path.insert(0, '/usr/local/lib/python2.4')
+#sys.path.insert(0, '/usr/local/mgi/lib/python')
+sys.path.insert(0, '/home/jak/lib/python/mgi')	# to find db module
 import db
 import refSectionLib
 
-
-def getParameters():
-    form = cgi.FieldStorage()
-
-    params = {}
-    for k in form.keys():
-	params[k] = form.getvalue(k)
-    return params
 
 def getReferenceInfo(pubmed):
     query = '''
@@ -47,9 +39,86 @@ def getReferenceInfo(pubmed):
     results = dbOutput[-1]	# list of results (should only be one)
 
     if len(results) == 0:
-	return "Pubmed ID '%s' not found" % str(pubmed)
+	return "PubMed ID '%s' not found" % str(pubmed)
     else:
 	return results[0]
+# ----------------------------
+
+def buildReferenceDetails(refInfo):
+    rsr = refSectionLib.RefSectionRemover()
+
+    lastKeyWord, refStart = rsr.predictRefSection(refInfo['extractedtext'])
+    lenText = len(refInfo['extractedtext'])
+    lenRefs = lenText - refStart
+    percent = 100 * float(lenRefs)/lenText
+
+    textareaWidth = 150
+    textareaHeight = 6
+    pdfLink = '<a href="http://bhmgiei01.jax.org/usrlocalmgi/live/pdfviewer/pdfviewer.cgi?id=%s" target="_blank">PDF</a>' % refInfo['pubmed']
+    body = [
+	'''
+	<TABLE>
+	<TR>
+	    <TH>Link</TH>
+	    <TH>PubMed</TH>
+	    <TH>Journal</TH>
+	    <TH>Title</TH>
+	    <TH>Other</TH>
+	</TR>
+	<TR>
+	''',
+	    '<TD> %s </TD>' % pdfLink,
+	    '<TD> %s </TD>' % refInfo['pubmed'],
+	    '<TD> %s </TD>' % refInfo['journal'],
+	    '<TD> %s </TD>' % refInfo['title'],
+	'''
+	    <TD>
+		Doc length: %d
+		<BR>Chars after: %d
+		<BR>After: %4.1f%%
+		<BR>Ref Section Matching Keyword: <B>%s</B>
+	    </TD>
+	'''	% (lenText, lenRefs, percent, lastKeyWord),
+	'''
+	<TR>
+	</TABLE>
+	''',
+	'''
+	<p>
+	<b>Start of doc</b>
+	<BR>
+	''',
+	    '<textarea rows="%d" cols="%d">' % (textareaHeight, textareaWidth),
+	     refInfo['extractedtext'][:refStart-200],
+	    '</textarea>',
+	'''
+	<p>
+	<b>Text Just Before Ref Section</b>
+	<BR>
+	''',
+	    '<textarea rows="%d" cols="%d">' % (textareaHeight, textareaWidth),
+	    refInfo['extractedtext'][refStart-200:refStart],
+	    '</textarea>',
+	'''
+	<p>
+	<b>Ref Section and Rest of Doc</b>
+	<BR>
+	''',
+	    '<textarea rows="%d" cols="%d">' % (textareaHeight, textareaWidth),
+	    refInfo['extractedtext'][refStart:],
+	    '</textarea>',
+    ]
+    return '\n'.join(body)
+# ----------------------------
+
+def getParameters():
+    form = cgi.FieldStorage()
+
+    params = {}
+    for k in form.keys():
+	params[k] = form.getvalue(k)
+    return params
+# ----------------------------
 
 def buildPage(params):
     head = """Content-type: text/html
@@ -72,16 +141,16 @@ def buildPage(params):
 	    paramReport.append( '<br>%s: %s' % (i[0], i[1]) )
 	paramReport.append('<br>End Parameters' )
 
-    form = [
-	    '<DIV CLASS="search">',
-	    '<FORM ACTION="refsection.cgi" METHOD="GET">',
-	    '<B>Pubmed ID </B>',
-	    '<INPUT NAME="pubmed" TYPE="text" SIZE="25" autofocus>',
+    form = ['''
+	    <DIV CLASS="search">
+	    <FORM ACTION="refsection3.cgi" METHOD="GET">
+	    <B>PubMed ID </B>
+	    <INPUT NAME="pubmed" TYPE="text" SIZE="25" autofocus>
+	    <INPUT TYPE="submit" VALUE="Go">
+	    </FORM>
+	    </DIV>
+	    ''']
 	    #'<INPUT NAME="isHidden" TYPE="hidden" VALUE="cannot see me">',
-	    '<INPUT TYPE="submit" VALUE="Go">',
-	    '</FORM>',
-	    '</DIV>',
-	    ]
 
     if params.has_key('pubmed'):
 	refInfo = getReferenceInfo(params['pubmed'])
@@ -97,71 +166,6 @@ def buildPage(params):
     tail = '</BODY></HTML>'
     print head + body + tail
     return
-
-def buildReferenceDetails(refInfo):
-    rsr = refSectionLib.RefSectionRemover()
-
-    lastKeyWord, refStart = rsr.predictRefSection(refInfo['extractedtext'])
-    lenText = len(refInfo['extractedtext'])
-    lenRefs = lenText - refStart
-    percent = 100 * float(lenRefs)/lenText
-
-    pdfLink = '<a href="http://bhmgiei01.jax.org/usrlocalmgi/live/pdfviewer/pdfviewer.cgi?id=%s" target="_blank">PDF</a>' % refInfo['pubmed']
-    body = [
-	'<TABLE>',
-	'<TR>',
-	    '<TH>Link</TH>',
-	    '<TH>Pubmed</TH>',
-	    '<TH>Journal</TH>',
-	    '<TH>Title</TH>',
-	'</TR>',
-	'<TR>',
-	  '<TD> %s </TD>' % pdfLink,
-	  '<TD> %s </TD>' % refInfo['pubmed'],
-	  '<TD> %s </TD>' % refInfo['journal'],
-	  '<TD> %s </TD>' % refInfo['title'],
-	'</TR>',
-	'</TABLE>',
-	'<P>',
-
-	'<TABLE>',
-	'<TR>',
-	    '<TH>Text Just Before Removed Section</TH>',
-	    '<TH>Other</TH>',
-	'</TR>',
-	'<TR>',
-	    '<TD>',
-		'<textarea rows="6" cols="100">',
-		refInfo['extractedtext'][refStart-200:refStart],
-		'</textarea>',
-	    '</TD>',
-	    '<TD>',
-		'Doc length: %d<BR>Chars after: %d<BR>After: %4.1f%%<BR>Ref Section Matching Keyword: <B>%s</B>' % (lenText, lenRefs, percent, lastKeyWord),
-	    '</TD>',
-	'</TR>',
-	'</TABLE>',
-	'<P>',
-
-	'<TABLE>',
-	'<TR>',
-	    '<TH>Text With Ref Section Removed</TH>'
-	    '<TH>Original Text</TH>',
-	'</TR>'
-	'</TR>'
-	    '<TD>',
-		'<textarea rows="30" cols="70">',
-		refInfo['extractedtext'][:refStart],
-		'</textarea>',
-	    '</TD>',
-	    '<TD>',
-		'<textarea rows="30" cols="70">',
-		refInfo['extractedtext'],
-		'</textarea>',
-	    '</TD>',
-	'</TR>'
-	'</TABLE>',
-    ]
-
-    return '\n'.join(body)
+# ----------------------------
 
 buildPage(getParameters())
