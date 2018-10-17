@@ -14,7 +14,7 @@ reports used to analyze the tuning runs.
 
 Assumes:
 * Tuning a binary text classification pipeline (maybe this assumption can go?)
-* with class labels yes and no
+* with class labels yes and no -- TRYING To REMOVE THIS ASSUMPTION
 * The text sample data is in sklearn load_files directory structure
 * Topmost directory in that folder is specified in config file or cmd line arg
 * We are Tuning a Pipeline via GridSearchCV
@@ -48,11 +48,6 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import make_scorer, fbeta_score, precision_score,\
 			recall_score, classification_report, confusion_matrix
 #-----------------------------------
-
-# in the list of classifications labels for evaluating text data
-# FIXME: Can these be replaced by CLASS_NAMES in config file?
-LABELS = [ 1,0]		#[ INDEX_OF_YES, INDEX_OF_NO ]
-TARGET_NAMES = ['yes', 'no']
 
 # ---------------------------
 # Common command line parameter handling for the tuning scripts
@@ -101,6 +96,9 @@ def parseCmdLine():
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
                         help='verbose: print longer tuning report.')
 
+    parser.add_argument('--gsverbose', dest='gsVerbose', action='store_true',
+                        help='have Gridsearch report details.')
+
     parser.add_argument('--rsplit', dest='randForSplit',
 			default=None, type=int,
                         help="integer random seed for test_train_split.")
@@ -121,7 +119,6 @@ def parseCmdLine():
 			default=TUNING_INDEX_FILE,
                         help='index file name. Default: %s' % \
 							TUNING_INDEX_FILE)
-
     parser.add_argument('-p', '--predict', dest='wPredictions',
 			action='store_true', default=False,
                         help='write predictions for test & training sets')
@@ -137,15 +134,21 @@ def parseCmdLine():
     args =  parser.parse_args()
 
     # config params that are not cmdline args (yet)
-    args.indexOfYes      = cp.getint  ("DEFAULT",      "INDEX_OF_YES")
-    args.indexOfNo       = cp.getint  ("DEFAULT",      "INDEX_OF_NO")
     args.gridSearchBeta  = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_BETA")
     args.compareBeta     = cp.getint  ("MODEL_TUNING", "COMPARE_BETA")
     args.testSplit       = cp.getfloat("MODEL_TUNING", "TEST_SPLIT")
     args.gridSearchCV    = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_CV")
-    args.classNames      = eval(cp.get("DEFAULT",      "CLASS_NAMES"))
+    args.yClassNames     = eval(cp.get("CLASS_NAMES",  "y_class_names"))
+    args.yClassToScore   = cp.getint  ("CLASS_NAMES",  "y_class_to_score")
+    args.rptClassNames   = eval(cp.get("CLASS_NAMES",  "rpt_class_names"))
+    args.rptClassMapping = eval(cp.get("CLASS_NAMES",  "rpt_class_mapping"))
+    args.rptNum      = cp.getint("CLASS_NAMES", "rpt_classification_report_num")
 
     return args
+# ---------------------------
+
+args = parseCmdLine()
+
 # ---------------------------
 # Random seed support:
 # For various methods, random seeds are used
@@ -189,43 +192,47 @@ class TextPipelineTuningHelper (object):
     def __init__(self,
 	pipeline,
 	pipelineParameters,
-	trainingDataDir,
-	testSplit=0.20,		# size of the test set from the dataSet
-	gridSearchBeta=4,	# beta to use in the gridsearch
-	gridSearchCV=5,		# number of cross validation folds to use
-	gsVerbose=1,		# verbose setting for grid search (to stdout)
-	indexOfYes=1,		# index of the "yes" label in the dataset
 	randomSeeds={'randForSplit':1},	# random seeds. Assume all are not None
 	):
-
-	self.pipeline = pipeline
+	self.pipeline           = pipeline
 	self.pipelineParameters = pipelineParameters
+	self.randomSeeds        = randomSeeds
+	self.randForSplit       = randomSeeds['randForSplit']	# required seed
 
-	self.gridSearchBeta = gridSearchBeta
-	self.indexOfYes = indexOfYes
-	self.trainingDataDir = trainingDataDir
+	self.trainingData       = args.trainingData
+	self.testSplit          = args.testSplit
+	self.gridSearchBeta     = args.gridSearchBeta
 
-	scorer = make_scorer(fbeta_score, beta=gridSearchBeta,
-							pos_label=indexOfYes)
+	self.tuningIndexFile    = args.tuningIndexFile
+	self.wIndex             = args.wIndex
+	self.wPredictions       = args.wPredictions
+	self.predFilePrefix     = args.predFilePrefix
+	self.compareBeta        = args.compareBeta
+	self.verbose            = args.verbose
+
+	self.yClassNames        = args.yClassNames
+	self.yClassToScore      = args.yClassToScore
+	self.rptClassNames      = args.rptClassNames
+	self.rptClassMapping    = args.rptClassMapping
+	self.rptNum             = args.rptNum
+
+	scorer = make_scorer(fbeta_score, beta=self.gridSearchBeta,
+					  pos_label=self.yClassToScore)
 
 	self.gs = GridSearchCV(pipeline,
 				pipelineParameters,
-				scoring=scorer,
-				cv=gridSearchCV,
-				verbose=gsVerbose,
-				n_jobs=-1,
+				scoring= scorer,
+				cv=      args.gridSearchCV,
+				verbose= args.gsVerbose,
+				n_jobs=  -1,
 				)
-	self.testSplit = testSplit
-	self.randomSeeds = randomSeeds
-	self.randForSplit = randomSeeds['randForSplit']	# required seed
-
 	self.time = getFormattedTime()
 	self.readDataSet()
 	self.computeSampleNames()
     #---------------------
 
     def readDataSet(self):
-	self.dataSet = load_files( self.trainingDataDir )
+	self.dataSet = load_files( self.trainingData )
     # ---------------------------
 
     def computeSampleNames(self):
@@ -283,6 +290,7 @@ class TextPipelineTuningHelper (object):
 	falseNegatives = []
 
 	for trueY, predY, name in zip(y_true, y_predicted, sampleNames):
+
 	    predType = skhelper.predictionType(trueY, predY)
 	    if predType == 'FP':
 		falsePositives.append(name)
@@ -296,29 +304,35 @@ class TextPipelineTuningHelper (object):
 		    nFeaturesReport=10,		# in features report
 		    nFalsePosNegReport=5,	# for false pos/neg rpt
 		    nTopFeatures=20,		# num of top weighted to rpt
-		    wIndex=False,		# write tuningIndex file
-		    tuningIndexFile='index.out',
-		    wPredictions=False,		# write predictions file
-		    predFilePrefix='predictions',
-		    compareBeta=4,	# Fbeta to report in tuningindex file
-		    verbose=False,
-		    classNames=['no','yes'] # map class indexes to names
 	):
-
-	if wIndex: self.writeIndexFile(tuningIndexFile, compareBeta)
-	if wPredictions: self.writePredictions(predFilePrefix, classNames)
+	if self.wIndex:
+	    self.writeIndexFile(self.tuningIndexFile, self.compareBeta)
+	if self.wPredictions:
+	    self.writePredictions()
 
 	output = getReportStart(self.time,self.gridSearchBeta,self.randomSeeds,
-				self.trainingDataDir, wIndex, tuningIndexFile)
+			self.trainingData, self.wIndex, self.tuningIndexFile)
 
 	output += getFormattedMetrics("Training Set", self.y_train,
-				    self.y_predicted_train, compareBeta)
+				    self.y_predicted_train, self.compareBeta,
+				    rptClassNames=self.rptClassNames,
+				    rptClassMapping=self.rptClassMapping,
+				    rptNum=self.rptNum,
+				    yClassNames=self.yClassNames,
+				    yClassToScore=self.yClassToScore,
+				    )
 	output += getFormattedMetrics("Test Set", self.y_test,
-				    self.y_predicted_test, compareBeta)
+				    self.y_predicted_test, self.compareBeta,
+				    rptClassNames=self.rptClassNames,
+				    rptClassMapping=self.rptClassMapping,
+				    rptNum=self.rptNum,
+				    yClassNames=self.yClassNames,
+				    yClassToScore=self.yClassToScore,
+				    )
 	output += getBestParamsReport(self.gs, self.pipelineParameters)
 	output += getGridSearchReport(self.gs, self.pipelineParameters)
 
-	if verbose: 
+	if self.verbose: 
 	    output += getTopFeaturesReport( \
 		    getOrderedFeatures(self.bestVectorizer,self.bestClassifier),
 		    nTopFeatures) 
@@ -351,36 +365,37 @@ class TextPipelineTuningHelper (object):
 	    fp.write("%s\tPRF%d,F1\t%4.2f\t%4.2f\t%4.2f\t%4.2f\t%s\n" % \
 	    (self.time,
 	    compareBeta,
-	    precision_score( y_true, y_predicted, pos_label=self.indexOfYes),
-	    recall_score( y_true, y_predicted, pos_label=self.indexOfYes),
-	    fbeta_score( y_true, y_predicted, compareBeta,
-						    pos_label=self.indexOfYes), 
-	    fbeta_score( y_true, y_predicted, 1, pos_label=self.indexOfYes), 
+	    precision_score(y_true, y_predicted, pos_label=self.yClassToScore),
+	    recall_score(   y_true, y_predicted, pos_label=self.yClassToScore),
+	    fbeta_score(    y_true, y_predicted, compareBeta,
+						pos_label=self.yClassToScore), 
+	    fbeta_score(    y_true, y_predicted, 1,
+						pos_label=self.yClassToScore), 
 	    tuningFile,
 	    ) )
 # ---------------------------
 
-    def writePredictions(self, predFilePrefix, classNames):
+    def writePredictions(self,):
 	'''
 	Write files with predictions from training set and test set
 	'''
 	writePredictionFile( \
-	    predFilePrefix + "_train.out",
+	    self.predFilePrefix + "_train.out",
 	    self.bestEstimator,
 	    self.docs_train,
 	    self.sampleNames_train,
 	    self.y_train,
 	    self.y_predicted_train,
-	    classNames=classNames,
+	    classNames=self.yClassNames,
 	    )
 	writePredictionFile( \
-	    predFilePrefix + "_test.out",
+	    self.predFilePrefix + "_test.out",
 	    self.bestEstimator,
 	    self.docs_test,
 	    self.sampleNames_test,
 	    self.y_test,
 	    self.y_predicted_test,
-	    classNames=classNames,
+	    classNames=self.yClassNames,
 	    )
 # ---------------------------
 # end class TextPipelineTuningHelper
@@ -556,42 +571,57 @@ def getFormattedMetrics( \
 	y_true,		# true category assignments
 	y_predicted,	# predicted assignments
 	beta,		# for the fbeta_score
-	indexOfYes=1	# index of the "yes" label
+	rptClassNames=['yes', 'no'],
+			# class labels for report outputs, in desired order
+	rptClassMapping=[1,0],
+			# rptClassMapping[y_val] = corresp name in rptClassNames
+	rptNum=1,	# num classes to show in classification_report
+			#   will be the 1st rptNum names in rptClassNames
+	yClassNames=['no', 'yes'],
+			# class labels for the actual y_values
+	yClassToScore=1	# index of actual class in yClassNames to score
 	):
     '''
     Return formated metrics report
     y_true and y_predicted are lists of integer category indexes.
     Assumes we are using a fbeta score, not a good thing in the long term
     '''
-    # concat title string onto all the target category names so
+    # concat title string onto all the target class names so
     #  they are easier to differentiate in multiple reports (and you can
     #  grep for them)
-    target_names = [ "%s %s" % (title[:5], x) for x in TARGET_NAMES ]
+    target_names = [ "%s %s" % (title[:5], x) for x in rptClassNames ]
 
     output = SSTART + "Metrics: %s\n" % title
     output += "%s\n" % (classification_report( \
 			y_true, y_predicted,
-			labels=LABELS[:1], target_names=target_names[:1])
-		    ) # only report on first label: "yes"
-    output += "%s F%d: %5.3f\n\n" % (title[:5],beta,
-				fbeta_score( y_true, y_predicted, beta,
-					     pos_label=indexOfYes ) )
+			target_names=target_names,
+			labels=rptClassMapping[:rptNum], )
+		    )
+    output += "%s F%d: %5.3f (%s)\n\n" % \
+	    (title[:5], beta,
+	    fbeta_score(y_true,y_predicted,beta, pos_label=yClassToScore ),
+	    yClassNames[yClassToScore],
+	    )
     output += "%s\n" % getFormattedCM(y_true, y_predicted)
 
     return output
 # ---------------------------
 
 def getFormattedCM( \
-    y_true,	# true category assignments for test set
-    y_predicted	# predicted assignments
+    y_true,		# true category assignments for test set
+    y_predicted,	# predicted assignments
+    rptClassNames=['yes', 'no'],
+		    # class labels for report outputs, in desired order
+    rptClassMapping=[1,0],
+		    # rptClassMapping[y_val] = corresp name in rptClassNames
     ):
     '''
     Return (minorly) formated confusion matrix
     FIXME: this could be greatly improved
     '''
     output = "%s\n%s\n" % ( \
-		str( TARGET_NAMES ),
-		str( confusion_matrix(y_true, y_predicted, labels=LABELS) ) )
+	    str(rptClassNames),
+	    str(confusion_matrix(y_true, y_predicted, labels=rptClassMapping)))
     return output
 #  ---------------------------
 
