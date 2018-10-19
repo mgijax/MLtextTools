@@ -1,10 +1,42 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python
 
 """
 Classes for predicting the location of reference sections in text from
 scientific articles
-"""
+TR 12763
 
+should work in python2.4 and 2.7
+
+Author: Jim
+
+Basic usage:
+    # to remove reference sections
+    remover = RefSectionRemover()
+    for articleText in articleSet:
+	articleWithNoRefSection = remover.removeRefSection(articleText)
+	do someting with articleWithNoRefSection...
+
+    # to get reference sections
+    remover = RefSectionRemover()
+    for articleText in articleSet:
+	refSection = remover.getRefSection(articleText)
+	do someting with refSection...
+
+Multiple Attempts at reference section prediction:
+    There are multiple RefSectionRemover class definitions below as I tried
+	various approaches.
+    The (current) best approach is RefSectionRemover.
+    I'm keeping the classes that try older approaches in case we want to
+	reconsider some of their logic.
+
+    All of the approaches involve searching for sets of keywords like
+	"References", "Literature Cited", ...
+    And a maxFraction for the length of the  predicted reference section to
+    the whole document - we don't want to throw away too much of the document,
+    so if the predicted ref section is too big (> maxFraction), we presume
+    the prediction is bogus and we punt, setting the reference section to
+    zero length.
+"""
 import string
 import re
 
@@ -36,8 +68,10 @@ class BaseRefSectionRemover (object):
 	"""
 	Abstract method.
 	Predict ref section.
-	Return the text found that we presume starts of the reference
-	    section and the position of it in full text.
+	Return a pair:
+	    the keyword text found that we predict starts of the reference
+	    section
+	    and the position of it in full text.
 	"""
 	pass
 	return "splitKeyWord", len(text)
@@ -47,16 +81,15 @@ class BaseRefSectionRemover (object):
 	"""
 	# for the set of keyTerms, return regex pattern string that matches
 	# \n(term1|term2|term3)\n - with each term "spacesAndCaseInsensitive"
-	# Assuming the doc still has newline's the '\n's match only if the
-	#   keyTerm is on a line by itself - which works well for section
-	#   headings.
-	# If we apply this to docs where newline's have been removed, we'd
-	#   have to replace '\n's with '\b's to match work boundaries.
+	# Assumes the doc has '\n's and matching a keyTerm on a line
+	#   by itself corresponds to a section heading.
+	# (future) If we apply this to docs where newline's have been removed,
+	#    we'd have to replace '\n's with '\b's to match word boundaries.
 	#   (could add this as an option at some point)
 	# Why "spacesAndCaseInsensitive"?
 	#   Diff journals use different case conventions, and the text
 	#   extraction algorithm sometimes converts case AND sometimes adds
-	#   spaces between the individual letters (no idea why)
+	#   spaces between the individual letters (no idea why - a font thing?)
 	"""
 	regexStr = r'\n('
 	insensitive = map(spacesAndCaseInsensitiveRegex, keyTerms)
@@ -90,11 +123,13 @@ class RefSectionRemover (BaseRefSectionRemover):
     '''
     Class to predict/remove Reference sections from (extracted) text strings.
     Approach:
-    Looks 1st for primary key terms, and if found uses their earliest location.
-    If no primary key terms are found, then look for other potential terms, 
-    use earliest location.
-    New:  move key term "Reference" into the secondary term list
-          Add minimum distance for key word from the end of the doc
+    Splits keyterms into "primary" and "secondary".
+    Looks 1st for primary key terms, and if found uses their latest location.
+    If no primary key terms are found, then look for secondary terms, 
+	use latest location (occurrance).
+    Also has a minimum fraction for a key word from the end of the doc as
+	sometimes words like "References" are in page footers at the end of an
+	article
     '''
     # Dict of key terms and whether they are a primary term
     keyTermDict = {
@@ -107,6 +142,7 @@ class RefSectionRemover (BaseRefSectionRemover):
 		"Conflict of Interest":  {"isPrimary":False},
 		}
     # dict of squashed key terms (no spaces, lower case)
+    # e.g., {"literaturecited": "Literature Cited"}
     squashedKeyTerms = \
 	dict( [ [x.replace(" ","").lower(), x] for x in keyTermDict.keys() ] )
 
@@ -125,8 +161,10 @@ class RefSectionRemover (BaseRefSectionRemover):
     def predictRefSection(self, text):
 	"""
 	Predict ref section.
-	Return the text found that we presume starts of the reference
-	    section and the position of it in full text.
+	Return a pair:
+	    the keyword text found that we predict starts of the reference
+	    section
+	    and the position of it in full text.
 	"""
 	textLength = len(text)
 
@@ -138,7 +176,7 @@ class RefSectionRemover (BaseRefSectionRemover):
 
 	primary, secondary = self.organizeMatches(reMatches)
 
-	primary.reverse()
+	primary.reverse()		# find latest occurrances first
 	secondary.reverse()
 	for m in primary:
 	    if self.isReasonableRefStart(m['termStart'], textLength):
@@ -158,7 +196,6 @@ class RefSectionRemover (BaseRefSectionRemover):
 	Is the predicted reference start location ok?
 	(or is it too early in the document so too much of the doc would be
 	 thrown away?)
-	Assumes subclass has self.maxFraction
 	"""
 	refLength = totalTextLength - refStart
 	percentRefSection = float(refLength)/totalTextLength
@@ -170,11 +207,16 @@ class RefSectionRemover (BaseRefSectionRemover):
 	"""
 	Return two lists: "match descriptions" to primary terms and to
 	    secondary terms.
-	Each "match description" is
+	Each "match description" has 3 fields:
 	    {'termStart': n, 'matchedText': str, 'keyTerm': str}
+	    matchedText: the actual matched chars in the text.
+	    keyTerm:     the text of the keyterm corresponding to matcheText.
+	    (they are not always the same)
+	    termStart: is the char position of the 1st letter of the matched
+			text in the text
 	"""
-	primary = []
-	secondary = []
+	primary = []		# list of matches to primary keyterms
+	secondary = []		# .. secondary
 
 	for reM in reMatches:
 
@@ -195,13 +237,12 @@ class RefSectionRemover (BaseRefSectionRemover):
 
     def getMatchedKeyTerm(self, matchedText):
 	"""
-	Convert matchedText to an actual key term.
-	(remove spaces, lower case)
+	Return the actual keyterm text corresponding to the matchedText.
 	This effectively "undoes" the weirdness we do to create the regular
 	expression for matching the key terms
 	"""
-	cleansedTerm = matchedText.replace(" ","").lower()
-	return self.squashedKeyTerms[cleansedTerm]
+	squashedTerm = matchedText.replace(" ","").lower()
+	return self.squashedKeyTerms[squashedTerm]
     # ----------------------------------
 
 #------------------ end Class RefSectionRemover
@@ -305,7 +346,7 @@ class RefSectionRemover_Jul12 (BaseRefSectionRemover):
 	return self.squashedKeyTerms[cleansedTerm]
     # ----------------------------------
 
-#------------------ end Class RefSectionRemover_new
+#------------------ end Class RefSectionRemover_Jul12
 
 class RefSectionRemover_orig (BaseRefSectionRemover):
     '''
@@ -372,7 +413,7 @@ def spacesAndCaseInsensitiveRegex(s):
     return '[ ]*'.join(reg)
 # -----------------------
 
-if __name__ == "__main__":
+if __name__ == "__main__":	# some tests
     print
     print "Latest approach"
     rm = RefSectionRemover(maxFraction=0.6,)
