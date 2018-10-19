@@ -42,17 +42,19 @@ def parseCmdLine():
     return args
 #----------------------
 
+args = parseCmdLine()
+
+#----------------------
 # Main prog
+#----------------------
 def main():
-    args = parseCmdLine()
 
     # extend path up multiple parent dirs, hoping we can import sampleDataLib
-    sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
+    sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,4)]] + \
+		    sys.path
     import sampleDataLib
 
-    if args.verbose:
-	sys.stderr.write("Preprocessing steps: %s\n" % \
-					' '.join(args.preprocessors)) 
+    verbose("Preprocessing steps: %s\n" % ' '.join(args.preprocessors)) 
     recordSep = sampleDataLib.RECORDSEP
     counts = { 'samples':0, 'skipped':0}
     headerLine = None		# None until we read 1st header line in 1st file
@@ -60,8 +62,7 @@ def main():
 
     for fn in args.inputFiles:
 
-	if args.verbose:
-	    sys.stderr.write("Reading %s\n" % fn)
+	verbose("Reading %s\n" % fn)
 	lines = open(fn,'r').read().split(recordSep)
 	del lines[-1]			# empty line at end after split
 
@@ -72,25 +73,27 @@ def main():
 	del lines[0]			# delete header line 
 	for line in lines:
 	    counts['samples'] += 1
-	    if args.verbose and (counts['samples'] % 100 == 0):# print every 100
-		sys.stderr.write("%d.." % counts['samples'] )
+	    if counts['samples'] % 100 == 0:	# print every 100
+		verbose("%d.." % counts['samples'] )
 
 	    sr = sampleDataLib.SampleRecord(line)
 	    for pp in args.preprocessors:
 		sr = getattr(sr,pp)()	# call preprocessor method on sr
 
 	    if sr.isReject():
-		if args.verbose:
-		    sys.stderr.write("%s, %s skipped\n" % \
+		verbose("%s, %s skipped\n" % \
 			    (sr.getRejectReason(), sr.getSampleName()) )
 		counts['skipped'] += 1
 	    else: sys.stdout.write(sr.getSampleAsText())
 
-    if args.verbose:
-	sys.stderr.write("Samples processed: %d \t Samples skipped: %d\n" % \
-			    (counts['samples'], counts['skipped']) )
-	sys.stderr.write( "Total time: %8.3f seconds\n\n" % \
-						    (time.time()-startTime))
+    verbose("Samples processed: %d \t Samples skipped: %d\n" % \
+					(counts['samples'], counts['skipped']) )
+    verbose( "Total time: %8.3f seconds\n\n" % (time.time()-startTime))
+# ---------------------
+
+def verbose(text):
+    if args.verbose: sys.stderr.write(text)
+
 # ---------------------
 if __name__ == "__main__":
     main()
