@@ -4,17 +4,16 @@ Support for "tuning scripts" for text machine learning projects.
 Separate from this module, there are tuning scripts that define Pipelines and
 parameter options to try/compare via GridSearchCV.
 
+So the code here is coupled with TuningTemplate.py.
+
 The idea is that, as much as possible, all code is here for these scripts, and
 only the Pipelines and parameters to try are in the tuning scripts.
-
-So the code here is coupled with TuningTemplate.py.
 
 The biggest part of this module is the implementation of various tuning
 reports used to analyze the tuning runs.
 
 Assumes:
 * Tuning a binary text classification pipeline (maybe this assumption can go?)
-* with class labels yes and no -- TRYING To REMOVE THIS ASSUMPTION
 * The text sample data is in sklearn load_files directory structure
 * Topmost directory in that folder is specified in config file or cmd line arg
 * We are Tuning a Pipeline via GridSearchCV
@@ -28,7 +27,7 @@ If the 'classifier' supports getting weighted coefficients via
 classifier.coef_, then the output from here can include a TopFeaturesReport
 
 Convention: trying to use camelCase for all the names here, but
-    sklearn typically_uses_names with underscores.
+    sklearn typically_uses_names with underscores. So _ for sklearn names.
 '''
 import sys
 import time
@@ -47,11 +46,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import make_scorer, fbeta_score, precision_score,\
 			recall_score, classification_report, confusion_matrix
-#-----------------------------------
 
-# ---------------------------
+############################################################
 # Common command line parameter handling for the tuning scripts
-# ---------------------------
+############################################################
 
 def parseCmdLine():
     """
@@ -66,12 +64,15 @@ def parseCmdLine():
     wIndex:		boolean - write indexfile
     wPredictions:	boolean - write predictions file
     predFilePrefix:	filename prefix for the prediction output files
-    indexOfYes:		int
-    indexOfNo:		int
     gridSearchBeta:	int
     compareBeta:	int
     testSplit:		float
     gridSearchCV:	int
+    yClassNames:	list of class names corresponding to Y values
+    yClassToScore:	index in yClassNames for class to use for f-score
+    repClassNames:	list of class names ordered as we want to report them
+    rptClassMapping: 	mapping of y_vals to classes in repClassNames 
+    rptNum:      	how many of rptClassNames to show in classi'cation rpt
     """
     cp = ConfigParser.ConfigParser()
     cp.optionxform = str # make keys case sensitive
@@ -85,6 +86,7 @@ def parseCmdLine():
     TUNING_INDEX_FILE = cp.get     ("MODEL_TUNING", "TUNING_INDEX_FILE")
     PRED_OUTPUT_FILE_PREFIX = cp.get("MODEL_TUNING", "PRED_OUTPUT_FILE_PREFIX")
 
+    # command line parameters
     parser = argparse.ArgumentParser( \
     description='Run a tuning experiment script.')
 
@@ -147,45 +149,11 @@ def parseCmdLine():
     return args
 # ---------------------------
 
-args = parseCmdLine()
+args = parseCmdLine()	# make args available to this code and importers
 
-# ---------------------------
-# Random seed support:
-# For various methods, random seeds are used
-#   e.g., for train_test_split() the seed is used to decide which samples
-#         make it into which set.
-# However, we want to record/report the random seeds used so we can
-#     reproduce results when desired.
-#     So we use these routines to always provide and report a random seed.
-#     If a seed is provided, we use it, if not, we generate one here.
-#
-# getRandomSeeds() takes a dictionary of seeds, and generates random seeds
-#     for any key that doesn't already have a numeric seed
-# getRandomSeedReport() formats a seed dictionary in a standard way
-#     for reporting.
-# ---------------------------
-
-def getRandomSeeds( seedDict    # dict: {'seedname' : number or None }
-    ):
-    '''
-    Set a random integer for each key in seedDict that is None
-    '''
-    for k in seedDict.keys():
-        if seedDict[k] == None: seedDict[k] = np.random.randint(1000)
-
-    return seedDict
-# ---------------------------
-
-def getRandomSeedReport( seedDict ):
-    output = "Random Seeds:\t"
-    for k in sorted(seedDict.keys()):
-        output += "%s=%d   " % (k, seedDict[k])
-    return output
-
-
-# ---------------------------
-# Main class
-# ---------------------------
+############################################################
+# Main class - encapsulates the tuning process
+############################################################
 
 class TextPipelineTuningHelper (object):
 
@@ -215,10 +183,11 @@ class TextPipelineTuningHelper (object):
 	self.rptClassNames      = args.rptClassNames
 	self.rptClassMapping    = args.rptClassMapping
 	self.rptNum             = args.rptNum
+	self.time = getFormattedTime()
 
+	# prepare for actual tuning!
 	scorer = make_scorer(fbeta_score, beta=self.gridSearchBeta,
 					  pos_label=self.yClassToScore)
-
 	self.gs = GridSearchCV(pipeline,
 				pipelineParameters,
 				scoring= scorer,
@@ -226,7 +195,6 @@ class TextPipelineTuningHelper (object):
 				verbose= args.gsVerbose,
 				n_jobs=  -1,
 				)
-	self.time = getFormattedTime()
 	self.readDataSet()
 	self.computeSampleNames()
     #---------------------
@@ -401,6 +369,11 @@ class TextPipelineTuningHelper (object):
 # end class TextPipelineTuningHelper
 # ---------------------------
 
+############################################################
+# Functions to format output reports and other things.
+# These are functions that concievably could be useful outside on their own.
+# SO these do not use args or config variables defined above.
+############################################################
 def writePredictionFile( \
     fileName,		# file to write to
     estimator,		# the trained model to use
@@ -444,9 +417,6 @@ def writePredictionFile( \
     return
 # ---------------------------
 
-# ---------------------------
-# Functions to format output reports
-# ---------------------------
 SSTART = "### "			# output section start delimiter
 
 def getReportStart(curtime,beta, randomSeeds,dataDir, wIndex, tuningIndexFile):
@@ -465,10 +435,10 @@ def getReportEnd():
 # ---------------------------
 
 def getTrainTestSplitReport( \
-	y_all,
-	y_train,
-	y_test,
-	testSplit
+	y_all,		# the y_values for the entire sample set
+	y_train,	# ... for the training set
+	y_test,		# ... for the test set
+	testSplit	# float, fraction of samples to use for the test set
 	):
     '''
     Report on the sizes and makeup of the training and test sets
@@ -498,7 +468,7 @@ def getTrainTestSplitReport( \
 # ---------------------------
 
 def getBestParamsReport( \
-    gs,	    # sklearn.model_selection.GridsearchCV that has been .fit()
+    gs,	    	# sklearn.model_selection.GridsearchCV that has been .fit()
     parameters  # dict of parameters used in the gridsearch
     ):
     output = SSTART +'Best Pipeline Parameters:\n'
@@ -510,7 +480,7 @@ def getBestParamsReport( \
 # ---------------------------
 
 def getGridSearchReport( \
-    gs,	    # sklearn.model_selection.GridsearchCV that has been .fit()
+    gs,	    	# sklearn.model_selection.GridsearchCV that has been .fit()
     parameters  # dict of parameters used in the gridsearch
     ):
     output = SSTART + 'GridSearch Pipeline:\n'
@@ -567,7 +537,7 @@ def getFalsePosNegReport( \
 # ---------------------------
 
 def getFormattedMetrics( \
-	title,		# string title
+	title,		# string title, typically  "Train" or "Test"
 	y_true,		# true category assignments
 	y_predicted,	# predicted assignments
 	beta,		# for the fbeta_score
@@ -582,8 +552,8 @@ def getFormattedMetrics( \
 	yClassToScore=1	# index of actual class in yClassNames to score
 	):
     '''
-    Return formated metrics report
-    y_true and y_predicted are lists of integer category indexes.
+    Return formated metrics report for a set of predictions.
+    y_true and y_predicted are lists of integer category indexes (y_vals).
     Assumes we are using a fbeta score, not a good thing in the long term
     '''
     # concat title string onto all the target class names so
@@ -678,3 +648,39 @@ def getTopFeaturesReport(  \
 
 def getFormattedTime():
     return time.strftime("%Y/%m/%d-%H-%M-%S")
+# ---------------------------
+
+
+############################################################
+# Random seed support:
+# For various methods, random seeds are used
+#   e.g., for train_test_split() the seed is used to decide which samples
+#         make it into which set.
+# However, we want to record/report the random seeds used so we can
+#     reproduce results when desired.
+#     So we use these routines to always provide and report a random seed.
+#     If a seed is provided, we use it, if not, we generate one here.
+#
+# getRandomSeeds() takes a dictionary of seeds, and generates random seeds
+#     for any key that doesn't already have a numeric seed
+# getRandomSeedReport() formats a seed dictionary in a standard way
+#     for reporting.
+############################################################
+
+def getRandomSeeds( seedDict    # dict: {'seedname' : number or None }
+    ):
+    '''
+    Set a random integer for each key in seedDict that is None
+    '''
+    for k in seedDict.keys():
+        if seedDict[k] == None: seedDict[k] = np.random.randint(1000)
+
+    return seedDict
+# ---------------------------
+
+def getRandomSeedReport( seedDict ):
+    output = "Random Seeds:\t"
+    for k in sorted(seedDict.keys()):
+        output += "%s=%d   " % (k, seedDict[k])
+    return output
+# ---------------------------
