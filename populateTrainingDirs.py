@@ -28,7 +28,11 @@ def parseCmdLine():
 
     parser.add_argument('-o', '--outputDir', dest='outputDir', action='store',
 	required=False, default='.',
-    	help='parent dir for /no and /yes. Default=%s' % '.')
+    	help='parent dir for /classname dirs. Default=%s' % '.')
+
+    parser.add_argument('-e', '--extension', dest='extension', action='store',
+	required=False, default=None,
+    	help='file extension for sample files. Default=None')
 
     parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
         required=False, help="skip helpful messages to stderr")
@@ -38,40 +42,57 @@ def parseCmdLine():
     return args
 #----------------------
 
-def main():
-    args = parseCmdLine()
+args = parseCmdLine()
 
-    sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
+def main():
+
+    sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,4)]])
     import sampleDataLib
 
-    for yesNo in ['yes', 'no']:
-	dirname =  os.sep.join( [ args.outputDir, yesNo ] )
+    if args.extension:
+	if args.extension.startswith('.'): fileExtension = args.extension
+	else: fileExtension = '.' + args.extension
+    else:
+	fileExtension = ''
+
+    counts = {}				# keep counts of samples from each class
+    for d in sampleDataLib.CLASS_NAMES:
+	counts[d] = 0
+	dirname =  os.sep.join( [ args.outputDir, d ] )
 	if not os.path.exists(dirname):
 	    os.makedirs(dirname)
 
-    counts = { 'yes':0, 'no':0,}
-
     for fn in args.inputFiles:
-	if args.verbose:
-            sys.stderr.write("Reading %s\n" % fn)
+	verbose("Reading %s\n" % fn)
 
-        lines = open(fn,'r').read().split(sampleDataLib.RECORDSEP)
-	del lines[-1]			# empty string at end of split
-	del lines[0]			# header line
-	for line in lines:
+        rcds = open(fn,'r').read().split(sampleDataLib.RECORDSEP)
+	del rcds[-1]			# empty string at end of split
+	del rcds[0]			# header line
+	for i,rcd in enumerate(rcds):
 
-	    sample = sampleDataLib.SampleRecord(line)
+	    if i % 100 == 0: verbose('.')
+
+	    sample = sampleDataLib.SampleRecord(rcd)
 	    
-	    yesNo = sample.getKnownClassName()
-	    counts[yesNo] += 1
+	    className = sample.getKnownClassName()
+	    counts[className] += 1
 
-	    filename = os.sep.join([args.outputDir,yesNo,
-						sample.getSampleName()])
+	    filename = os.sep.join([args.outputDir,className,
+					sample.getSampleName() +fileExtension])
 	    with open(filename, 'w') as newFile:
 		newFile.write(sample.getDocument()) 
 
-    numFiles = counts['yes'] + counts['no']
-    print "Files written to %s: %d" % (args.outputDir, numFiles)
-    print "%d yes, %d no" % (counts['yes'], counts['no'])
-#
+    verbose('\n')
+    numFiles = 0
+    for c in sampleDataLib.CLASS_NAMES:
+	verbose("%d files written to %s\n" % (counts[c], c) )
+	numFiles += counts[c]
+    verbose("%d total files written under %s\n" % (numFiles,args.outputDir))
+#----------------------
+
+def verbose(text):
+    if args.verbose:
+	sys.stderr.write(text)
+#----------------------
+
 main()
