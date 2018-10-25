@@ -133,6 +133,10 @@ def parseCmdLine():
 			default=PRED_OUTPUT_FILE_PREFIX,
 	    help='prefix for prediction output filenames. Default: %s' % \
 						    PRED_OUTPUT_FILE_PREFIX)
+    parser.add_argument('--features', dest='writeFeatures',
+			action='store_true', default=False,
+			help="write feature names to 'features.txt'")
+
     args =  parser.parse_args()
 
     # config params that are not cmdline args (yet)
@@ -175,6 +179,7 @@ class TextPipelineTuningHelper (object):
 	self.wIndex             = args.wIndex
 	self.wPredictions       = args.wPredictions
 	self.predFilePrefix     = args.predFilePrefix
+	self.writeFeatures      = args.writeFeatures
 	self.compareBeta        = args.compareBeta
 	self.verbose            = args.verbose
 
@@ -277,6 +282,8 @@ class TextPipelineTuningHelper (object):
 	    self.writeIndexFile(self.tuningIndexFile, self.compareBeta)
 	if self.wPredictions:
 	    self.writePredictions()
+	if self.writeFeatures:
+	    writeFeatures(self.bestVectorizer, "features.txt")
 
 	output = getReportStart(self.time,self.gridSearchBeta,self.randomSeeds,
 			self.trainingData, self.wIndex, self.tuningIndexFile)
@@ -645,6 +652,21 @@ def getTopFeaturesReport(  \
 
     return output
 # ---------------------------
+
+def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
+		    fileName	# to write to
+    ):
+    '''
+    Write the full list of feature names to the file
+    Assumes:  vectorizer has get_feature_names() method
+    '''
+    featureNames = vectorizer.get_feature_names()
+
+    with open(fileName, 'w') as fp:
+	for f in featureNames:
+	    fp.write(f + '\n')
+    return 
+# ----------------------------
 
 def getFormattedTime():
     return time.strftime("%Y/%m/%d-%H-%M-%S")
