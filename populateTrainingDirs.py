@@ -70,7 +70,7 @@ def main():
 	del rcds[0]			# header line
 	for i,rcd in enumerate(rcds):
 
-	    if i % 100 == 0: verbose('.')
+	    if i % 500 == 0: verbose('.')
 
 	    sample = sampleDataLib.SampleRecord(rcd)
 	    
