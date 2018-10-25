@@ -71,20 +71,33 @@ def main():
 	    sys.stdout.write(headerLine + recordSep)
 
 	del lines[0]			# delete header line 
-	for line in lines:
-	    counts['samples'] += 1
-	    if counts['samples'] % 100 == 0:	# print every 100
-		verbose("%d.." % counts['samples'] )
 
-	    sr = sampleDataLib.SampleRecord(line)
-	    for pp in args.preprocessors:
-		sr = getattr(sr,pp)()	# call preprocessor method on sr
+	# save prev sample ID for printing if we get an exception.
+	# Give us a fighting chance of finding the offending record!
+	prevSampleName = 'very first sample'
 
-	    if sr.isReject():
-		verbose("%s, %s skipped\n" % \
-			    (sr.getRejectReason(), sr.getSampleName()) )
-		counts['skipped'] += 1
-	    else: sys.stdout.write(sr.getSampleAsText())
+	for rcdnum, line in enumerate(lines):
+	    try:
+		counts['samples'] += 1
+		if counts['samples'] % 500 == 0:	# print every 500
+		    verbose("%d.." % counts['samples'] )
+
+		sr = sampleDataLib.SampleRecord(line)
+		for pp in args.preprocessors:
+		    sr = getattr(sr,pp)()	# call preprocessor method on sr
+
+		if sr.isReject():
+		    verbose("%s, %s skipped\n" % \
+				(sr.getRejectReason(), sr.getSampleName()) )
+		    counts['skipped'] += 1
+		else: sys.stdout.write(sr.getSampleAsText())
+		prevSampleName = sr.getSampleName()
+	    except:
+		sys.stderr.write( \
+		"\nException in %s record %s prevID %s\n\n" % \
+				    (fn, rcdnum, prevSampleName)
+		)
+		raise
 
     verbose("Samples processed: %d \t Samples skipped: %d\n" % \
 					(counts['samples'], counts['skipped']) )
