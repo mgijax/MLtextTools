@@ -41,6 +41,7 @@ import ConfigParser
 import sklearnHelperLib as skhelper
 
 import numpy as np
+from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.datasets import load_files
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
@@ -242,6 +243,10 @@ class TextPipelineTuningHelper (object):
 	self.bestEstimator  = self.gs.best_estimator_
 	self.bestVectorizer = self.bestEstimator.named_steps['vectorizer']
 	self.bestClassifier = self.bestEstimator.named_steps['classifier']
+	self.featureEvaluator = self.bestEstimator.named_steps.get( \
+						    'featureEvaluator',None)
+	if self.featureEvaluator == None: self.featureValues = None
+	else: self.featureValues = self.featureEvaluator.getValues()
 
 	# run estimator on both the training set and test set so we can compare
 	self.y_predicted_train = self.bestEstimator.predict(self.docs_train)
@@ -283,7 +288,8 @@ class TextPipelineTuningHelper (object):
 	if self.wPredictions:
 	    self.writePredictions()
 	if self.writeFeatures:
-	    writeFeatures(self.bestVectorizer, "features.txt")
+	    writeFeatures(self.bestVectorizer, self.bestClassifier,
+				    "features.txt", values=self.featureValues)
 
 	output = getReportStart(self.time,self.gridSearchBeta,self.randomSeeds,
 			self.trainingData, self.wIndex, self.tuningIndexFile)
@@ -375,6 +381,32 @@ class TextPipelineTuningHelper (object):
 # ---------------------------
 # end class TextPipelineTuningHelper
 # ---------------------------
+
+class FeatureDocCounter(BaseEstimator, TransformerMixin):
+    """
+    An "Estimator" that gives you access to the number of documents each
+        feature occurs in.
+    Put this "Estimator" into your pipeline after the vectorizer,
+    then Access this list of counts via getValues()
+    """
+
+    def transform(self, X):
+        # print type(X)
+        # I wish I understood scipy.sparse matrices and/or numpy.matrix,
+        #   but these magic words seem to work (after trial and error)
+        self.docCounts = X.sum(axis=0,dtype=int).tolist()[0]
+        return X
+
+    def fit(self, X, y=None, **fit_params):
+        return self
+
+    def getValues(self):
+        """ Return list of counts, one integer for each feature,
+            in feature order.
+            Each count is the number of docs the feature occurs in.
+        """
+        return self.docCounts
+# end FeatureDocCounter ----------
 
 ############################################################
 # Functions to format output reports and other things.
@@ -654,17 +686,38 @@ def getTopFeaturesReport(  \
 # ---------------------------
 
 def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
-		    fileName	# to write to
+		    classifier,	# fitted classifier from the pipeline
+		    fileName,	# to write to
+		    values=None,# list of feature values, one for each feature
+				# This is some number per feature based on
+				#   analysis of the features. Typical example:
+				#   number of documents each feature appears in
+				#   (but could be anything)
+				# Values are printed with %d. This could
+				#  become a problem....
     ):
     '''
     Write the full list of feature names to the file
+    if values = [ ], should be numeric list parallel to feature names
+	we will print these after the feature name
+    if classifier can provide feature coefficients, we will print these too
+    All "|" delimited.
     Assumes:  vectorizer has get_feature_names() method
     '''
+    delimiter = '|'
     featureNames = vectorizer.get_feature_names()
 
+    hasValues = values != None
+
+    hasCoef = hasattr(classifier, 'coef_')
+    if hasCoef: coefficients = classifier.coef_[0].tolist()
+
     with open(fileName, 'w') as fp:
-	for f in featureNames:
-	    fp.write(f + '\n')
+	for i,f in enumerate(featureNames):
+	    fp.write(f)
+	    if hasValues: fp.write(delimiter + '%d' % values[i])
+	    if hasCoef:   fp.write(delimiter + '%+5.4f' % coefficients[i])
+	    fp.write('\n')
     return 
 # ----------------------------
 
