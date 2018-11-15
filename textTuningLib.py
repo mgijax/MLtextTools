@@ -81,6 +81,9 @@ from sklearn.metrics import make_scorer, fbeta_score, precision_score,\
 sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,4)]] + \
 		sys.path
 import sampleDataLib
+
+SSTART = "### "			# report output section start delimiter
+
 ############################################################
 # Common command line parameter handling for the tuning scripts
 ############################################################
@@ -398,8 +401,7 @@ class TextPipelineTuningHelper (object):
 	    writeFeatures(self.bestVectorizer, self.bestClassifier,
 				    self.featureFile, values=self.featureValues)
 
-	output = getReportStart(self.time,self.gridSearchBeta,self.randomSeeds,
-			self.trainingData, self.wIndex, self.tuningIndexFile)
+	output = self.getReportStart()
 
 	output += getFormattedMetrics("Training Set", self.y_train,
 				    self.y_predicted_train, self.compareBeta,
@@ -436,9 +438,28 @@ class TextPipelineTuningHelper (object):
 #	    output += getTrainTestSplitReport(self.dataSet.target,self.y_train,
 #						self.y_test, self.testSplit)
 
-	output += getReportEnd()
+	output += self.getReportEnd()
 	return output
-# ---------------------------
+    # ---------------------------
+
+
+    def getReportStart(self):
+
+	output = SSTART + "Start Time %s  %s" % (self.time, sys.argv[0])
+	if self.wIndex: output += "\tindex file: %s" % self.tuningIndexFile
+	output += "\n"
+	output += "Training data path:   %s\tGridSearch Beta: %d\n" % \
+				    (self.trainingData, self.gridSearchBeta)
+	output += "Validation data path: %s\n" % (str(self.validationData))
+	output += "Test data path:       %s\n" % (str(self.testData))
+	output += getRandomSeedReport(self.randomSeeds)
+	output += "\n"
+	return output
+    # ---------------------------
+
+    def getReportEnd(self):
+	return SSTART + "End Time %s\n" % getFormattedTime()
+    # ---------------------------
 
     def writeIndexFile(self, tuningIndexFile, compareBeta):
 	'''
@@ -670,22 +691,6 @@ def writePredictionFile( \
 	    fp.write(template % p)
     return
 # ---------------------------
-
-SSTART = "### "			# output section start delimiter
-
-def getReportStart(curtime,beta, randomSeeds,dataDir, wIndex, tuningIndexFile):
-
-    output = SSTART + "Start Time %s  %s" % (curtime, sys.argv[0])
-    if wIndex: output += "\tindex file: %s" % tuningIndexFile
-    output += "\n"
-    output += "Data dir: %s,\tGridSearch Beta: %d\n" % (dataDir, beta)
-    output += getRandomSeedReport(randomSeeds)
-    output += "\n"
-    return output
-# ---------------------------
-
-def getReportEnd():
-    return SSTART + "End Time %s\n" % getFormattedTime()
 # ---------------------------
 
 def getTrainTestSplitReport( \
