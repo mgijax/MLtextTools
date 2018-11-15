@@ -1,32 +1,61 @@
 '''
 Support for "tuning scripts" for text machine learning projects.
 
+Idea:
 Separate from this module, there are tuning scripts that define Pipelines and
-parameter options to try/compare via GridSearchCV.
+parameter options to try and evaluate. (see TuningTemplate.py)
+
+As much as possible, all code is here for these scripts, and only the
+pipeline definition & parameter options to evaluate are in the tuning scripts.
 
 So the code here is coupled with TuningTemplate.py.
 
-The idea is that, as much as possible, all code is here for these scripts, and
-only the Pipelines and parameters to try are in the tuning scripts.
-
-The biggest part of this module is the implementation of various tuning
+A big part of this module is the implementation of various tuning
 reports used to analyze the tuning runs.
 
 Assumes:
-* Tuning a binary text classification pipeline (maybe this assumption can go?)
-* The text sample data is in sklearn load_files directory structure
-* Topmost directory in that folder is specified in config file or cmd line arg
-* We are Tuning a Pipeline via GridSearchCV
-* The Pipeline has named steps: 'vectorizer', 'classifier' with their
+* Pipelines are for binary classification
+* Pipelines have named steps: 'vectorizer', 'classifier' with their
 *   obvious meanings (may have other steps too)
-* We are scoring GridSearchCV Pipeline parameter runs via an F-Score
+* The text sample data is in sklearn load_files directory structure
+*   or in files parsable by sampleDataLib.py
+* We are scoring Pipeline parameter runs via an F-Score
 *   (beta is a parameter to this library)
+* We can import sampleDataLib that encapsulates knowledge of the specific
+*   document type/set we are dealing with (e.g., how to parse data files
+*   and break records into documents, etc.)
 * probably other things...
-*
+
+Evaluating Pipeline Parameters:
+Two Approaches are supported
+    (1) k-fold cross validation using GridSearchCV.
+    (2) you provide a validation set
+    For either approach you can provide either
+	* a sample set that will be randomly split into a training
+	    and test set.
+	* separate training and test sets
+    We'll evaluate the different parameter combinations via cross validation (1)
+    or on the validation set provided (2) to select the best scoring parameters.
+    Then the pipeline with best parameter combination is used to predict the
+    test set and its results are reported.
+
+Other functionality:
+* Many options/parameters for this process are specified in a config file
+    and/or command line arguments (to the tuning script using this module)
+    that this module processes.
+
+* Support for generating random seeds or using fixed specified seeds.
+
+* Provides a pipeline step, FeatureDocCounter, which you can put into a
+    pipeline just after the vectorizer step, and it will give you access to
+    the number of documents each feature appears in.
+
+Reports...
 If the 'classifier' supports getting weighted coefficients via
 classifier.coef_, then the output from here can include a TopFeaturesReport
 
-Convention: trying to use camelCase for all the names here, but
+Coding Convention:
+    Use camelCase for all the names here, but
     sklearn typically_uses_names with underscores. So _ for sklearn names.
 '''
 import sys
@@ -48,12 +77,17 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import make_scorer, fbeta_score, precision_score,\
 			recall_score, classification_report, confusion_matrix
 
+# extend path up multiple parent dirs, hoping we can import sampleDataLib
+sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,4)]] + \
+		sys.path
+import sampleDataLib
 ############################################################
 # Common command line parameter handling for the tuning scripts
 ############################################################
 
 def parseCmdLine():
     """
+    JIM: check that this list is still accurate
     shared among the ModelTuning scripts
     Handles cmdline args and config file, returning dict that combines them.
     Keys:
@@ -85,16 +119,25 @@ def parseCmdLine():
     # config file params that are defaults for command line options
     TRAINING_DATA     = cp.get     ("DEFAULT", "TRAINING_DATA")
     TUNING_INDEX_FILE = cp.get     ("MODEL_TUNING", "TUNING_INDEX_FILE")
+    FEATURE_OUTPUT_FILE = cp.get   ("MODEL_TUNING", "FEATURE_OUTPUT_FILE")
     PRED_OUTPUT_FILE_PREFIX = cp.get("MODEL_TUNING", "PRED_OUTPUT_FILE_PREFIX")
 
     # command line parameters
     parser = argparse.ArgumentParser( \
     description='Run a tuning experiment script.')
 
-    parser.add_argument('-d', '--data', dest='trainingData',
+    parser.add_argument('-d', '--trainpath', dest='trainingData',
             default=TRAINING_DATA,
-            help='Directory where training data files live. Default: "%s"' \
+            help='pathname where training data live. Default: "%s"' \
                     % TRAINING_DATA)
+
+    parser.add_argument('--valpath', dest='validationData',
+            default=None,
+            help='pathname where validation data live. Default: None')
+
+    parser.add_argument('--testpath', dest='testData',
+            default=None,
+            help='pathname where test data live. Default: None')
 
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
                         help='verbose: print longer tuning report.')
@@ -136,7 +179,7 @@ def parseCmdLine():
 						    PRED_OUTPUT_FILE_PREFIX)
     parser.add_argument('--features', dest='writeFeatures',
 			action='store_true', default=False,
-			help="write feature names to 'features.txt'")
+	    help="write full feature set to %s" % FEATURE_OUTPUT_FILE)
 
     args =  parser.parse_args()
 
@@ -144,7 +187,8 @@ def parseCmdLine():
     args.gridSearchBeta  = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_BETA")
     args.compareBeta     = cp.getint  ("MODEL_TUNING", "COMPARE_BETA")
     args.testSplit       = cp.getfloat("MODEL_TUNING", "TEST_SPLIT")
-    args.gridSearchCV    = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_CV")
+    args.numCV           = cp.getint  ("MODEL_TUNING", "NUM_CV")
+    args.featureFile     = cp.get     ("MODEL_TUNING", "FEATURE_OUTPUT_FILE")
     args.yClassNames     = eval(cp.get("CLASS_NAMES",  "y_class_names"))
     args.yClassToScore   = cp.getint  ("CLASS_NAMES",  "y_class_to_score")
     args.rptClassNames   = eval(cp.get("CLASS_NAMES",  "rpt_class_names"))
@@ -167,22 +211,28 @@ class TextPipelineTuningHelper (object):
 	pipelineParameters,
 	randomSeeds={'randForSplit':1},	# random seeds. Assume all are not None
 	):
+	# JIM: does it really make sense to copy all these to self. ?
 	self.pipeline           = pipeline
 	self.pipelineParameters = pipelineParameters
 	self.randomSeeds        = randomSeeds
 	self.randForSplit       = randomSeeds['randForSplit']	# required seed
 
 	self.trainingData       = args.trainingData
+	self.validationData     = args.validationData
+	self.testData           = args.testData
 	self.testSplit          = args.testSplit
 	self.gridSearchBeta     = args.gridSearchBeta
+	self.numCV              = args.numCV
 
 	self.tuningIndexFile    = args.tuningIndexFile
 	self.wIndex             = args.wIndex
 	self.wPredictions       = args.wPredictions
 	self.predFilePrefix     = args.predFilePrefix
 	self.writeFeatures      = args.writeFeatures
+	self.featureFile	= args.featureFile
 	self.compareBeta        = args.compareBeta
 	self.verbose            = args.verbose
+	self.gsVerbose          = args.gsVerbose
 
 	self.yClassNames        = args.yClassNames
 	self.yClassToScore      = args.yClassToScore
@@ -191,31 +241,81 @@ class TextPipelineTuningHelper (object):
 	self.rptNum             = args.rptNum
 	self.time = getFormattedTime()
 
-	# prepare for actual tuning!
-	scorer = make_scorer(fbeta_score, beta=self.gridSearchBeta,
+	self.scorer = make_scorer(fbeta_score, beta=self.gridSearchBeta,
 					  pos_label=self.yClassToScore)
-	self.gs = GridSearchCV(pipeline,
-				pipelineParameters,
-				scoring= scorer,
-				cv=      args.gridSearchCV,
-				verbose= args.gsVerbose,
-				n_jobs=  -1,
-				)
-	self.readDataSet()
-	self.computeSampleNames()
     #---------------------
 
-    def readDataSet(self):
-	self.dataSet = load_files( self.trainingData )
-    # ---------------------------
+    def getGridSearchParams(self):
+	"""
+	Figure out what doc set, y values, cv value to use for the GridSearchCV.
 
-    def computeSampleNames(self):
-	'''
-	Convert list of filenames into Samplenames
-	'''
-	self.sampleNames = [ os.path.basename(fn) for fn \
-						    in self.dataSet.filenames ]
-    # ---------------------------
+	Return docs, y, cv
+
+	If we don't have a specified validation set,
+	    Have GridSearchCV use k-fold cross validation on the training set
+	    Return docs_train, y_train, and the int cv value (num of folds)
+
+	If we do have a specified validation set, this is more subtle.
+	    Since we have a val set, we don't want to use k-fold, but
+	    we still want to use GridSearchCV to train/compare each permutation
+	    (so we want to use the GridSearch w/o the CV)
+
+	    Why use GridSearchCV to do this?
+	    Because it is coded to try the diff permutations in parallel.
+
+	    We'll combine the training set w/ the validation set into
+	    one document list,
+	    And tell GridSearchCV how to separate the training docs from the
+	    validation docs in one split.
+
+	    This is done by providing a cv value that is
+	    a list (iterator) of pairs of doc indexes
+
+	    [ ( [training doc indexes], [val doc indexes] ),  ]
+	    
+	    In our case, we only want one pair of index lists since we only
+	    have one "split" into training and validation docs.
+
+	    See the cv parameter here:
+	    https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GridSearchCV.html#sklearn.model_selection.GridSearchCV
+
+	    It is not very well documented, but by chasing down the source
+	    code, I figured out that the structure above is what the cv list
+	    (iterator) needs to be.
+	"""
+	docSets = DocumentSetLoader(self.trainingData, self.validationData,
+				    self.testData,
+				    testSplit=self.testSplit,
+				    randomSeed=self.randForSplit)
+
+	self.sampleNames_train = docSets.trainingSet.sampleNames
+	self.docs_train        = docSets.trainingSet.docs
+	self.y_train           = docSets.trainingSet.y
+
+	self.sampleNames_test = docSets.testSet.sampleNames
+	self.docs_test        = docSets.testSet.docs
+	self.y_test           = docSets.testSet.y
+
+	if docSets.validationSet == None: 	# no val set, use k-fold
+	    self.haveValSet = False
+	    docs_gs         = self.docs_train
+	    y_gs            = self.y_train
+	    cv              = self.numCV
+	else:
+	    self.haveValSet      = True
+	    self.sampleNames_val = docSets.validationSet.sampleNames
+	    self.docs_val        = docSets.validationSet.docs
+	    self.y_val           = docSets.validationSet.y
+
+	    docs_gs = self.docs_train + self.docs_val
+	    y_gs    = np.concatenate( (self.y_train, self.y_val) )
+
+	    lenTrain = len(self.docs_train)
+	    lenVal   = len(self.docs_val)
+	    cv = [ (range(lenTrain), range(lenTrain, lenTrain+lenVal) ), ]
+
+	return docs_gs, y_gs, cv
+    #---------------------
 
     def fit(self):
 	'''
@@ -224,23 +324,23 @@ class TextPipelineTuningHelper (object):
 	# using _train _test variable names as is the custom in sklearn.
 	# "y_" are the correct classifications (labels) for the corresponding
 	#   samples
+	docs_gs, y_gs, cv = self.getGridSearchParams()
 
-	    # sample names
-	    # documents (strings) themselves
-	    # correct classifications (labels) for the samples
-	self.sampleNames_train, self.sampleNames_test,	\
-	self.docs_train,        self.docs_test,	\
-	self.y_train,           self.y_test = train_test_split( \
-					    self.sampleNames,
-					    self.dataSet.data,
-					    self.dataSet.target,
-					    test_size=self.testSplit,
-					    random_state=self.randForSplit)
+	self.gs = GridSearchCV( self.pipeline,
+				self.pipelineParameters,
+				scoring= self.scorer,
+				cv=      cv,
+				verbose= self.gsVerbose,
+				n_jobs=  -1,
+				)
+	self.gs.fit( docs_gs, y_gs )
 
-	self.gs.fit( self.docs_train, self.y_train )	# DO THE GRIDSEARCH
-
-	# FIXME: maybe Should implement getter's for these
 	self.bestEstimator  = self.gs.best_estimator_
+
+	# does it make sense to retrain the bestEstimator on the full docs_gs
+	#   set
+	self.bestEstimator.fit( self.docs_train, self.y_train)
+
 	self.bestVectorizer = self.bestEstimator.named_steps['vectorizer']
 	self.bestClassifier = self.bestEstimator.named_steps['classifier']
 	self.featureEvaluator = self.bestEstimator.named_steps.get( \
@@ -248,8 +348,12 @@ class TextPipelineTuningHelper (object):
 	if self.featureEvaluator == None: self.featureValues = None
 	else: self.featureValues = self.featureEvaluator.getValues()
 
-	# run estimator on both the training set and test set so we can compare
+	# run estimator on the training, val, test sets so we can compare
 	self.y_predicted_train = self.bestEstimator.predict(self.docs_train)
+
+	if self.haveValSet:
+	    self.y_predicted_val  = self.bestEstimator.predict(self.docs_val)
+
 	self.y_predicted_test  = self.bestEstimator.predict(self.docs_test)
 
 	return self		# customary for fit() methods
@@ -259,6 +363,9 @@ class TextPipelineTuningHelper (object):
 	'''
 	Return lists of (sample names of) false positives and false negatives
 	    in a test set
+	JIM: This should be for validation set, if any. Test set otherwise.
+	    I guess even getting FP / FN for predicted training set could be
+	    of interest.  hmmm
 	'''
 	y_true      = self.y_test
 	y_predicted = self.y_predicted_test
@@ -289,7 +396,7 @@ class TextPipelineTuningHelper (object):
 	    self.writePredictions()
 	if self.writeFeatures:
 	    writeFeatures(self.bestVectorizer, self.bestClassifier,
-				    "features.txt", values=self.featureValues)
+				    self.featureFile, values=self.featureValues)
 
 	output = getReportStart(self.time,self.gridSearchBeta,self.randomSeeds,
 			self.trainingData, self.wIndex, self.tuningIndexFile)
@@ -324,9 +431,10 @@ class TextPipelineTuningHelper (object):
 	    falsePos, falseNeg = self.getFalsePosNeg()
 	    output += getFalsePosNegReport( falsePos, falseNeg,
 						num=nFalsePosNegReport)
-
-	    output += getTrainTestSplitReport(self.dataSet.target,self.y_train,
-						self.y_test, self.testSplit)
+#	    FIXME:  this report is going to have to be rethought
+#		right now, we don't have self.dataSet to use
+#	    output += getTrainTestSplitReport(self.dataSet.target,self.y_train,
+#						self.y_test, self.testSplit)
 
 	output += getReportEnd()
 	return output
@@ -381,16 +489,122 @@ class TextPipelineTuningHelper (object):
 # ---------------------------
 # end class TextPipelineTuningHelper
 # ---------------------------
+# ---------------------------
+
+# FIXME: the next two classes are oddly structured. Need to rethink
+# Probably: change DocumentSet to take a path parameter and load the
+#           doc set. (that's it. just load the document set)
+#           Then DocumentSetLoader should be responsible for splitting
+#		training and test sets.
+
+class DocumentSet (object):
+    # a data structure with 3 parallel lists:  docs, y, sampleNames
+    def __init__(self, docs=[], y=[], sampleNames=[]):
+	self.docs = docs
+	self.y = y
+	self.sampleNames = sampleNames
+# ---------------------------
+
+class DocumentSetLoader (object):
+    """
+    Load training, validation, and test data sets from files or directories.
+    Assumes the trainingSetPath is the path to a non-empty dataset.
+    Validation set may be empty (path = None).
+    If test set path is None, a random test set will be pulled out of the
+	training set using testSplit and randomSeed
+	(so upon instantiation, we will always have a trainingSet and testSet)
+    You can access these sets like:
+	foo = DocumentSetLoader( trainingSetPath, valSetPath, testSetPath)
+	# foo.trainingSet.docs
+	# foo.trainingSet.y
+	# foo.trainingSet.sampleNames
+	# foo.testSet.docs
+	# ...
+    FIXME: need to document this class and methods better
+    """
+    def __init__(self,
+		trainingSetPath,
+		validationSetPath=None,
+		testSetPath=None,
+		testSplit=0.20,
+		randomSeed=None,
+		):
+	self.validationSet = self.getDocSet(validationSetPath)
+	self.trainingSet   = self.getDocSet(trainingSetPath)
+	self.testSet       = self.getDocSet(testSetPath)
+
+	if self.testSet == None:
+	    # split training set into random training/test sets
+
+		# sample names
+		# documents (strings) themselves
+		# correct classifications (labels) for the samples
+	    sampleNames_train, sampleNames_test,	\
+	    docs_train,        docs_test,		\
+	    y_train,           y_test = train_test_split( \
+						self.trainingSet.sampleNames,
+						self.trainingSet.docs,
+						self.trainingSet.y,
+						test_size=testSplit,
+						random_state=randomSeed)
+	    self.trainingSet = DocumentSet(docs_train,y_train,sampleNames_train)
+	    self.testSet = DocumentSet(docs_test, y_test, sampleNames_test)
+    # ---------------------------
+
+    def getDocSet(self, path):
+	if path == None:  return None
+	path = os.path.realpath(path)
+	if os.path.isdir(path):
+	    docSet = self.getDocSetFromDir(path)
+	else:
+	    docSet = self.getDocSetFromFile(path)
+	return docSet
+    # ---------------------------
+
+    def getDocSetFromDir(self, path):
+	dataSet = load_files( path )
+	return DocumentSet( dataSet.data, dataSet.target, 
+				self.computeSampleNames( dataSet.filenames) )
+    # ---------------------------
+
+    def computeSampleNames(self, filenames):
+	''' Convert list of filenames into Samplenames '''
+	return [ os.path.basename(fn) for fn in filenames ]
+    # ---------------------------
+
+    def getDocSetFromFile(self, path):
+	# read sample file
+	docs = []		# docs in the sample file
+	y = []			# their y values (0 or 1)
+	sampleNames = []	# their sample names
+
+        rcds = open(path,'r').read().split(sampleDataLib.RECORDSEP)
+
+	del rcds[0]		# header line
+        del rcds[-1] 		# empty string after end of split
+
+	for rcd in rcds:
+	    sr = sampleDataLib.SampleRecord(rcd)
+	    docs.append(sr.getDocument())
+	    y.append   (sr.getKnownYvalue())
+	    sampleNames.append(sr.getSampleName())
+
+	return DocumentSet( docs, np.array(y), sampleNames)
+	#return DocumentSet( docs, y, sampleNames)
+    # ---------------------------
+
+# end class DocumentSetLoader ---------------------------
+
 
 class FeatureDocCounter(BaseEstimator, TransformerMixin):
     """
-    An "Estimator" that gives you access to the number of documents each
+    An sklearn Estimator that gives you access to the number of documents each
         feature occurs in.
     Put this "Estimator" into your pipeline after the vectorizer,
     then Access this list of counts via getValues()
     """
-
     def transform(self, X):
+	'''don't actually transform X, just gather the counts.'''
         # print type(X)
         # I wish I understood scipy.sparse matrices and/or numpy.matrix,
         #   but these magic words seem to work (after trial and error)
@@ -398,6 +612,7 @@ class FeatureDocCounter(BaseEstimator, TransformerMixin):
         return X
 
     def fit(self, X, y=None, **fit_params):
+	'''nothing to actually fit'''
         return self
 
     def getValues(self):
@@ -759,3 +974,22 @@ def getRandomSeedReport( seedDict ):
         output += "%s=%d   " % (k, seedDict[k])
     return output
 # ---------------------------
+
+if __name__ == "__main__":
+    # ad hoc test code
+    if True:	# DocumentSetLoader testing
+	d = DocumentSetLoader('Data/smallset/figureText.txt',
+				validationSetPath='data/smallSet',
+				testSetPath='data/smallSet',
+				testSplit=0.1, randomSeed=None)
+	print len(d.trainingSet.docs)
+	print d.trainingSet.y[:5]
+	print d.trainingSet.sampleNames[:5]
+	print len(d.testSet.docs)
+	print d.testSet.y[:5]
+	print d.testSet.sampleNames[:5]
+	print type(d.testSet.y)
+	if d.validationSet != None:
+	    print len(d.validationSet.docs)
+	    print d.validationSet.y[:5]
+	    print d.validationSet.sampleNames[:5]
