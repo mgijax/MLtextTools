@@ -94,7 +94,7 @@ def parseCmdLine():
     shared among the ModelTuning scripts
     Handles cmdline args and config file, returning dict that combines them.
     Keys:
-    trainingData:	dir path to training data
+    trainDataPath:	dir path to training data
     verbose:		boolean - print longer tuning report
     randForSplit:	int
     randForClassifier:	int
@@ -129,17 +129,15 @@ def parseCmdLine():
     parser = argparse.ArgumentParser( \
     description='Run a tuning experiment script.')
 
-    parser.add_argument('-d', '--trainpath', dest='trainingData',
+    parser.add_argument('-d', '--trainpath', dest='trainDataPath',
             default=TRAINING_DATA,
             help='pathname where training data live. Default: "%s"' \
                     % TRAINING_DATA)
 
-    parser.add_argument('--valpath', dest='validationData',
-            default=None,
+    parser.add_argument('--valpath', dest='valDataPath', default=None,
             help='pathname where validation data live. Default: None')
 
-    parser.add_argument('--testpath', dest='testData',
-            default=None,
+    parser.add_argument('--testpath', dest='testDataPath', default=None,
             help='pathname where test data live. Default: None')
 
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
@@ -148,8 +146,7 @@ def parseCmdLine():
     parser.add_argument('--gsverbose', dest='gsVerbose', action='store_true',
                         help='have Gridsearch report details.')
 
-    parser.add_argument('--rsplit', dest='randForSplit',
-			default=None, type=int,
+    parser.add_argument('--rsplit', dest='randForSplit', default=None, type=int,
                         help="integer random seed for test_train_split.")
 
     parser.add_argument('--rclassifier', dest='randForClassifier',
@@ -215,14 +212,15 @@ class TextPipelineTuningHelper (object):
 	randomSeeds={'randForSplit':1},	# random seeds. Assume all are not None
 	):
 	# JIM: does it really make sense to copy all these to self. ?
+	#      the idea was that only this constructor access args.
 	self.pipeline           = pipeline
 	self.pipelineParameters = pipelineParameters
 	self.randomSeeds        = randomSeeds
 	self.randForSplit       = randomSeeds['randForSplit']	# required seed
 
-	self.trainingData       = args.trainingData
-	self.validationData     = args.validationData
-	self.testData           = args.testData
+	self.trainDataPath      = args.trainDataPath
+	self.valDataPath        = args.valDataPath
+	self.testDataPath       = args.testDataPath
 	self.testSplit          = args.testSplit
 	self.gridSearchBeta     = args.gridSearchBeta
 	self.numCV              = args.numCV
@@ -286,8 +284,8 @@ class TextPipelineTuningHelper (object):
 	    code, I figured out that the structure above is what the cv list
 	    (iterator) needs to be.
 	"""
-	docSets = DocumentSetLoader(self.trainingData, self.validationData,
-				    self.testData,
+	docSets = DocumentSetLoader(self.trainDataPath, self.valDataPath,
+				    self.testDataPath,
 				    testSplit=self.testSplit,
 				    randomSeed=self.randForSplit)
 
@@ -327,6 +325,7 @@ class TextPipelineTuningHelper (object):
 	# using _train _test variable names as is the custom in sklearn.
 	# "y_" are the correct classifications (labels) for the corresponding
 	#   samples
+	# _gs = grid search set
 	docs_gs, y_gs, cv = self.getGridSearchParams()
 
 	self.gs = GridSearchCV( self.pipeline,
@@ -340,9 +339,10 @@ class TextPipelineTuningHelper (object):
 
 	self.bestEstimator  = self.gs.best_estimator_
 
-	# does it make sense to retrain the bestEstimator on the full docs_gs
-	#   set
-	self.bestEstimator.fit( self.docs_train, self.y_train)
+	# Now that we've found the estimator that scores best on val set,
+	# retrain the bestEstimator on the full docs_gs set
+	# (this is full training set or training set + validation set)
+	self.bestEstimator.fit( docs_gs, y_gs)
 
 	self.bestVectorizer = self.bestEstimator.named_steps['vectorizer']
 	self.bestClassifier = self.bestEstimator.named_steps['classifier']
@@ -411,6 +411,15 @@ class TextPipelineTuningHelper (object):
 				    yClassNames=self.yClassNames,
 				    yClassToScore=self.yClassToScore,
 				    )
+	if self.haveValSet:
+	    output += getFormattedMetrics("Validation Set", self.y_val,
+					self.y_predicted_val, self.compareBeta,
+					rptClassNames=self.rptClassNames,
+					rptClassMapping=self.rptClassMapping,
+					rptNum=self.rptNum,
+					yClassNames=self.yClassNames,
+					yClassToScore=self.yClassToScore,
+					)
 	output += getFormattedMetrics("Test Set", self.y_test,
 				    self.y_predicted_test, self.compareBeta,
 				    rptClassNames=self.rptClassNames,
@@ -449,9 +458,9 @@ class TextPipelineTuningHelper (object):
 	if self.wIndex: output += "\tindex file: %s" % self.tuningIndexFile
 	output += "\n"
 	output += "Training data path:   %s\tGridSearch Beta: %d\n" % \
-				    (self.trainingData, self.gridSearchBeta)
-	output += "Validation data path: %s\n" % (str(self.validationData))
-	output += "Test data path:       %s\n" % (str(self.testData))
+				    (self.trainDataPath, self.gridSearchBeta)
+	output += "Validation data path: %s\n" % (str(self.valDataPath))
+	output += "Test data path:       %s\n" % (str(self.testDataPath))
 	output += getRandomSeedReport(self.randomSeeds)
 	output += "\n"
 	return output
