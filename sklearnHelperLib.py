@@ -35,16 +35,42 @@ def removeNonAscii(text):
     return ''.join([i if ord(i) < 128 else ' ' for i in text])
 #-----------------------------------
 
-def predictionType(trueY, predY):
+def getFalsePosNeg( y_true,		# [true vals], typically 0/1 or yes/no 
+                    y_predicted,	# [pred vals], typically 0/1 or yes/no 
+                    sampleNames,	# [ sample names]
+                    positiveClass=1,    # value in y_ considered "pos"
+    ):
     '''
-    Return 'FP', 'FN', 'TP', or 'TN' depending on trueY and predY.
-    Assumes trueY and predY are (scalar) values 0 or 1 or 'yes'/'no'
+    Return lists of (sample names of) false positives and false negatives
+        comparing true values to predicted ones
+    Assumes y_true, y_predicted, sampleNames are parallel lists
     '''
-    if trueY == predY:
-	if predY == 1 or predY == 'yes': retVal = "TP"
+    falsePositives = []
+    falseNegatives = []
+
+    for trueY, predY, name in zip(y_true, y_predicted, sampleNames):
+
+        predType = predictionType(trueY, predY, positiveClass=positiveClass)
+        if   predType == 'FP':
+            falsePositives.append(name)
+        elif predType == 'FN':
+            falseNegatives.append(name)
+
+    return falsePositives, falseNegatives
+# ---------------------------
+
+def predictionType( y_true,		# true value, typically 0/1 or yes/no 
+		    y_predicted,	# pred value, typically 0/1 or yes/no 
+		    positiveClass=1,	# value in y_ considered "pos"
+    ):
+    '''
+    Return 'FP', 'FN', 'TP', or 'TN' depending on y_true and y_predicted
+    '''
+    if y_true == y_predicted:
+	if y_predicted == positiveClass: retVal = "TP"
         else: retVal = 'TN'
     else:
-        if predY == 1 or predY == 'yes': retVal = 'FP'
+        if y_predicted == positiveClass: retVal = 'FP'
         else: retVal = 'FN'
     return retVal
 # ---------------------------
@@ -215,3 +241,34 @@ stemmingNotes= \
 	stopword list by stemming its elements. Fortunately words removed by 
 	min_df and max_df have already been stemmed (if you are stemming).
 '''
+if __name__ == "__main__":
+    # ad hoc test code
+    if False:    # predictionType() testing
+	print predictionType(1, 0, positiveClass=1)	# FN
+	print predictionType(1, 0, positiveClass=0)	# FP
+	print
+	print predictionType(0, 1, positiveClass=1)	# FP
+	print predictionType(0, 1, positiveClass=0)	# FN
+	print
+	print predictionType(0, 0, positiveClass=1)	# TN
+	print predictionType(0, 0, positiveClass=0)	# TP
+	print
+	print predictionType(1, 1, positiveClass=1)	# TP
+	print predictionType(1, 1, positiveClass=0)	# TN
+
+    if True:	# getFalsePosNeg() testing
+	fpos, fneg = getFalsePosNeg([0,1,0,1],
+				    [0,0,1,1],
+				    ['s1', 's2 FN', 's3 FP', 's4'],
+				    positiveClass=1,
+				    )
+	print 'false Positives: ', fpos
+	print 'false Negatives: ', fneg
+	fpos, fneg = getFalsePosNeg([0,1,0,1],
+				    [0,0,1,1],
+				    ['s1', 's2 FP', 's3 FN', 's4'],
+				    positiveClass=0,
+				    )
+	print 'false Positives: ', fpos
+	print 'false Negatives: ', fneg
+

@@ -67,7 +67,7 @@ import os.path
 import argparse
 import ConfigParser
 
-import sklearnHelperLib as skhelper
+import sklearnHelperLib as skHelper
 
 import numpy as np
 from sklearn.base import TransformerMixin, BaseEstimator
@@ -301,7 +301,7 @@ class TextPipelineTuningHelper (object):
 	    self.haveValSet = False
 	    docs_gs         = self.docs_train
 	    y_gs            = self.y_train
-	    cv              = self.numCV
+	    cv              = 2  # JIM: small cv for testing self.numCV
 	else:
 	    self.haveValSet      = True
 	    self.sampleNames_val = docSets.validationSet.sampleNames
@@ -362,32 +362,6 @@ class TextPipelineTuningHelper (object):
 	return self		# customary for fit() methods
     # ---------------------------
 
-    def getFalsePosNeg( self):
-	'''
-	Return lists of (sample names of) false positives and false negatives
-	    in a test set
-	JIM: This should be for validation set, if any. Test set otherwise.
-	    I guess even getting FP / FN for predicted training set could be
-	    of interest.  hmmm
-	'''
-	y_true      = self.y_test
-	y_predicted = self.y_predicted_test
-	sampleNames = self.sampleNames_test
-
-	falsePositives = []
-	falseNegatives = []
-
-	for trueY, predY, name in zip(y_true, y_predicted, sampleNames):
-
-	    predType = skhelper.predictionType(trueY, predY)
-	    if predType == 'FP':
-		falsePositives.append(name)
-	    elif predType == 'FN':
-		falseNegatives.append(name)
-
-	return falsePositives, falseNegatives
-    # ---------------------------
-
     def getReports(self,
 		    nFeaturesReport=10,		# in features report
 		    nFalsePosNegReport=5,	# for false pos/neg rpt
@@ -439,9 +413,15 @@ class TextPipelineTuningHelper (object):
 	    output += getVectorizerReport(self.bestVectorizer,
 					    nFeatures=nFeaturesReport)
 
-	    falsePos, falseNeg = self.getFalsePosNeg()
-	    output += getFalsePosNegReport( falsePos, falseNeg,
-						num=nFalsePosNegReport)
+	    # false positives/negatives report.
+	    # Should this be for validation set or test or both?
+	    falsePos,falseNeg = skHelper.getFalsePosNeg( self.y_test,
+					self.y_predicted_test,
+					self.sampleNames_test,
+					positiveClass=self.yClassToScore)
+
+	    output += getFalsePosNegReport( "Test set", falsePos, falseNeg,
+					    num=nFalsePosNegReport)
 #	    FIXME:  this report is going to have to be rethought
 #		right now, we don't have self.dataSet to use
 #	    output += getTrainTestSplitReport(self.dataSet.target,self.y_train,
@@ -506,7 +486,9 @@ class TextPipelineTuningHelper (object):
 	    self.y_train,
 	    self.y_predicted_train,
 	    classNames=self.yClassNames,
+	    positiveClass=self.yClassToScore,
 	    )
+	# JIM: include validation set predictions too?
 	writePredictionFile( \
 	    self.predFilePrefix + "_test.out",
 	    self.bestEstimator,
@@ -515,6 +497,7 @@ class TextPipelineTuningHelper (object):
 	    self.y_test,
 	    self.y_predicted_test,
 	    classNames=self.yClassNames,
+	    positiveClass=self.yClassToScore,
 	    )
 # ---------------------------
 # end class TextPipelineTuningHelper
@@ -666,13 +649,15 @@ def writePredictionFile( \
     y_true,		# true labels/classifications for those docs 0|1
     y_predicted,	# predicted labels/classifications for those docs 0|1
     classNames=['no','yes'],
+    positiveClass=1,	# index in classNames considered the positive class
     ):
     '''
     Write a prediction file, with confidence values if available.
     Prediction file has a line for each doc,
 	samplename, y_true, y_predicted, FP/FN, [confidence, abs value]
     '''
-    predTypes = [skhelper.predictionType(t,p) for t,p in zip(y_true,y_predicted)]
+    predTypes = [skHelper.predictionType(t, p, positiveClass=positiveClass) \
+					    for t,p in zip(y_true,y_predicted)]
     
     trueNames = [ classNames[y] for y in y_true ]
     predNames = [ classNames[y] for y in y_predicted ]
@@ -683,8 +668,9 @@ def writePredictionFile( \
 	predictions = \
 	    zip(sampleNames, trueNames, predNames, predTypes, conf, absConf)
 
+	# sort by absolute value of confidence
 	selConf = lambda x: x[5]	# select confidence value 
-	predictions = sorted(predictions, key=selConf)
+	predictions = sorted(predictions, key=selConf, reverse=True)
 
 	header = "ID\tTrue Class\tPred Class\tFP/FN\tConfidence\tAbs Value\n"
 	template = "%s\t%s\t%s\t%s\t%5.3f\t%5.3f\n"
@@ -699,7 +685,6 @@ def writePredictionFile( \
 	for p in predictions:
 	    fp.write(template % p)
     return
-# ---------------------------
 # ---------------------------
 
 def getTrainTestSplitReport( \
@@ -782,21 +767,21 @@ def getVectorizerReport(vectorizer, nFeatures=10):
 # ---------------------------
 
 def getFalsePosNegReport( \
-    falsePositives,	# list of (sample names) of the falsePositives
-    falseNegatives,	# ... 
-    num=5		# number of false pos/negs to display
-    ):
+	title,		# string title, typically  "Train" or "Test"
+	falsePositives,	# list of (sample names) of the falsePositives
+	falseNegatives,	# ... 
+	num=5		# number of false pos/negs to display
+	):
     '''
     Report on the false positives and false negatives in a test set
     '''
-    # method to get false positives and falsenegativess lists
 
-    output = SSTART + "False positives: %d\n" % len(falsePositives)
+    output = SSTART+"False positives for %s: %d\n" % (title,len(falsePositives))
     for name in falsePositives[:num]:
 	output += "%s\n" % name
 
     output += "\n"
-    output += SSTART + "False negatives: %d\n" % len(falseNegatives)
+    output += SSTART+"False negatives for %s: %d\n" % (title,len(falseNegatives))
     for name in falseNegatives[:num]:
 	output += "%s\n" % name
 
