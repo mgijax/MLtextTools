@@ -422,15 +422,12 @@ class TextPipelineTuningHelper (object):
 
 	    output += getFalsePosNegReport( "Test set", falsePos, falseNeg,
 					    num=nFalsePosNegReport)
-#	    FIXME:  this report is going to have to be rethought
-#		right now, we don't have self.dataSet to use
-#	    output += getTrainTestSplitReport(self.dataSet.target,self.y_train,
-#						self.y_test, self.testSplit)
+
+	    output += self.getSampleSummaryReport()
 
 	output += self.getReportEnd()
 	return output
     # ---------------------------
-
 
     def getReportStart(self):
 
@@ -499,6 +496,34 @@ class TextPipelineTuningHelper (object):
 	    classNames=self.yClassNames,
 	    positiveClass=self.yClassToScore,
 	    )
+# ---------------------------
+
+    def getSampleSummaryReport(self,):
+	""" Return string that summarizes the subsets of samples (training,
+	    validation, test)
+	"""
+	# -----------------
+	def formatter(title, y):
+	    n = len(y)
+	    pos = list(y).count(self.yClassToScore)
+	    neg = n - pos
+	    output = "%-20s: %12d %12d %12d %11.0f%%\n" % \
+			( title[:20], n, pos, neg,  100.0 * (float(pos)/n) )
+	    return output
+	# -----------------
+
+	output = SSTART + "Sample set sizes\n"
+	# Header line
+	output += "%-20s: %12s %12s %12s %12s\n" % \
+		    ( ' ', 'Samples', 'Positive', 'Negative', '% Positive')
+
+	if self.haveValSet:
+	    output += formatter('Validation Set', self.y_val)
+	output += formatter('Training Set', self.y_train)
+	output += formatter('Test Set',     self.y_test)
+	output += "TestSplit: %4.2f\n" % self.testSplit
+	return output
+
 # ---------------------------
 # end class TextPipelineTuningHelper
 # ---------------------------
@@ -642,7 +667,7 @@ class FeatureDocCounter(BaseEstimator, TransformerMixin):
 # SO these do not use args or config variables defined above.
 ############################################################
 def writePredictionFile( \
-    fileName,		# file to write to
+    outputFile,		# file name (string) or file object (e.g., stdout)
     estimator,		# the trained model to use
     docs,		# the documents to predict
     sampleNames,	# sample names for those docs
@@ -680,44 +705,14 @@ def writePredictionFile( \
 	header = "ID\tTrue Class\tPred Class\FP/FN\n"
 	template = "%s\t%s\t%s\t%s\n"
 
-    with open(fileName, 'w') as fp:
-	fp.write(header)
-	for p in predictions:
-	    fp.write(template % p)
-    return
-# ---------------------------
+    if type(outputFile) == type(''): fp = open(outputFile, 'w')
+    else: fp = outputFile
 
-def getTrainTestSplitReport( \
-	y_all,		# the y_values for the entire sample set
-	y_train,	# ... for the training set
-	y_test,		# ... for the test set
-	testSplit	# float, fraction of samples to use for the test set
-	):
-    '''
-    Report on the sizes and makeup of the training and test sets
-    FIXME:  this is very yucky code...
-    '''
-    output = SSTART+ 'Train Test Split Report, test %% = %4.2f\n' % (testSplit)
-    output += \
-    "All Samples: %6d\tTraining Samples: %6d\tTest Samples: %6d\n" \
-		    % (len(y_all), len(y_train), len(y_test))
-    nYesAll = y_all.tolist().count(1)
-    nYesTra = y_train.tolist().count(1)
-    nYesTes = y_test.tolist().count(1)
-    output += \
-    "Yes count:   %6d\tYes count:        %6d\tYes count:    %6d\n" \
-		    % (nYesAll, nYesTra, nYesTes)
-    output += \
-    "No  count:   %6d\tNo  count:        %6d\tNo  count:    %6d\n" \
-		    % (y_all.tolist().count(0),
-		       y_train.tolist().count(0),
-		       y_test.tolist().count(0)  )
-    output += \
-    "Percent Yes:    %2.2d%%\tPercent Yes:         %2.2d%%\tPercent Yes:     %2.2d%%\n" \
-		    % (100 * nYesAll/len(y_all),
-		       100 * nYesTra/len(y_train),
-		       100 * nYesTes/len(y_test) )
-    return output
+    fp.write(header)
+    for p in predictions:
+	fp.write(template % p)
+
+    return
 # ---------------------------
 
 def getBestParamsReport( \
@@ -901,7 +896,7 @@ def getTopFeaturesReport(  \
 
 def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
 		    classifier,	# fitted classifier from the pipeline
-		    fileName,	# to write to
+		    outputFile,	# filename (string) or file obj (e.g., stdout)
 		    values=None,# list of feature values, one for each feature
 				# This is some number per feature based on
 				#   analysis of the features. Typical example:
@@ -926,12 +921,14 @@ def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
     hasCoef = hasattr(classifier, 'coef_')
     if hasCoef: coefficients = classifier.coef_[0].tolist()
 
-    with open(fileName, 'w') as fp:
-	for i,f in enumerate(featureNames):
-	    fp.write(f)
-	    if hasValues: fp.write(delimiter + '%d' % values[i])
-	    if hasCoef:   fp.write(delimiter + '%+5.4f' % coefficients[i])
-	    fp.write('\n')
+    if type(outputFile) == type(''): fp = open(outputFile, 'w')
+    else: fp = outputFile
+
+    for i,f in enumerate(featureNames):
+	fp.write(f)
+	if hasValues: fp.write(delimiter + '%d' % values[i])
+	if hasCoef:   fp.write(delimiter + '%+5.4f' % coefficients[i])
+	fp.write('\n')
     return 
 # ----------------------------
 
