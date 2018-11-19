@@ -70,7 +70,6 @@ import ConfigParser
 import sklearnHelperLib as skHelper
 
 import numpy as np
-from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.datasets import load_files
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
@@ -422,9 +421,9 @@ class TextPipelineTuningHelper (object):
 	output += getGridSearchReport(self.gs, self.pipelineParameters)
 
 	if self.verbose: 
-	    output += getTopFeaturesReport( \
-		    getOrderedFeatures(self.bestVectorizer,self.bestClassifier),
-		    nTopFeatures) 
+	    features = skHelper.getOrderedFeatures( self.bestVectorizer,
+						    self.bestClassifier)
+	    output += getTopFeaturesReport( features, nTopFeatures) 
 
 	    output += getVectorizerReport(self.bestVectorizer,
 					    nFeatures=nFeaturesReport)
@@ -485,7 +484,7 @@ class TextPipelineTuningHelper (object):
 						pos_label=self.yClassToScore), 
 	    tuningFile,
 	    ) )
-# ---------------------------
+    # ---------------------------
 
     def writePredictions(self,):
 	'''
@@ -512,7 +511,7 @@ class TextPipelineTuningHelper (object):
 	    classNames=self.yClassNames,
 	    positiveClass=self.yClassToScore,
 	    )
-# ---------------------------
+    # ---------------------------
 
     def getSampleSummaryReport(self,):
 	""" Return string that summarizes the subsets of samples (training,
@@ -543,7 +542,6 @@ class TextPipelineTuningHelper (object):
 # ---------------------------
 # end class TextPipelineTuningHelper
 # ---------------------------
-# ---------------------------
 
 class DocumentSet (object):
     """
@@ -554,6 +552,8 @@ class DocumentSet (object):
 	    Split into two doc sets, 
 	    Convert y_values to and from lists and np.array
     FIXME: maybe this should live in sampleDataLib.py ??
+	    (it should not live in sklearnHelperLib since it requires import
+	    of sampleDataLib)
     """
     def __init__(self,
 		docs=[],	# list of document (strings)
@@ -668,34 +668,6 @@ class DocumentSet (object):
 	return self
 # end class DocumentSet ---------------------------
 
-
-class FeatureDocCounter(BaseEstimator, TransformerMixin):
-    """
-    An sklearn Estimator that gives you access to the number of documents each
-        feature occurs in.
-    Put this "Estimator" into your pipeline after the vectorizer,
-    then Access this list of counts via getValues()
-    """
-    def transform(self, X):
-	'''don't actually transform X, just gather the counts.'''
-        # print type(X)
-        # I wish I understood scipy.sparse matrices and/or numpy.matrix,
-        #   but these magic words seem to work (after trial and error)
-        self.docCounts = X.sum(axis=0,dtype=int).tolist()[0]
-        return X
-
-    def fit(self, X, y=None, **fit_params):
-	'''nothing to actually fit'''
-        return self
-
-    def getValues(self):
-        """ Return list of counts, one integer for each feature,
-            in feature order.
-            Each count is the number of docs the feature occurs in.
-        """
-        return self.docCounts
-# end FeatureDocCounter ----------
-
 ############################################################
 # Functions to format output reports and other things.
 # These are functions that concievably could be useful outside on their own.
@@ -749,6 +721,44 @@ def writePredictionFile( \
 
     return
 # ---------------------------
+
+def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
+		    classifier,	# fitted classifier from the pipeline
+		    outputFile,	# filename (string) or file obj (e.g., stdout)
+		    values=None,# list of feature values, one for each feature
+				# This is some number per feature based on
+				#   analysis of the features. Typical example:
+				#   number of documents each feature appears in
+				#   (but could be anything)
+				# Values are printed with %d. This could
+				#  become a problem....
+    ):
+    '''
+    Write the full list of feature names to the file
+    if values = [ ], should be numeric list parallel to feature names
+	we will print these after the feature name
+    if classifier can provide feature coefficients, we will print these too
+    All "|" delimited.
+    Assumes:  vectorizer has get_feature_names() method
+    '''
+    delimiter = '|'
+    featureNames = vectorizer.get_feature_names()
+
+    hasValues = values != None
+
+    hasCoef = hasattr(classifier, 'coef_')
+    if hasCoef: coefficients = classifier.coef_[0].tolist()
+
+    if type(outputFile) == type(''): fp = open(outputFile, 'w')
+    else: fp = outputFile
+
+    for i,f in enumerate(featureNames):
+	fp.write(f)
+	if hasValues: fp.write(delimiter + '%d' % values[i])
+	if hasCoef:   fp.write(delimiter + '%+5.4f' % coefficients[i])
+	fp.write('\n')
+    return 
+# ----------------------------
 
 def getBestParamsReport( \
     gs,	    	# sklearn.model_selection.GridsearchCV that has been .fit()
@@ -878,26 +888,6 @@ def getFormattedCM( \
     return output
 #  ---------------------------
 
-def getOrderedFeatures( vectorizer,	# fitted vectorizer from a pipeline
-			classifier	# trained classifier from a pipeline
-    ):
-    '''
-    Return list of pairs, [ (feature, coef), (feature, coef), ... ]
-	ordered from highest coef to lowest.
-    Assumes:  vectorizer has get_feature_names() method
-    '''
-    if not hasattr(classifier, 'coef_'): # not all have coef's
-	return []
-
-    coefficients = classifier.coef_[0].tolist()
-    featureNames = vectorizer.get_feature_names()
-    
-    pairList = zip(featureNames, coefficients)
-
-    selCoef = lambda x: x[1]	# select the coefficient in the pair
-    return sorted(pairList, key=selCoef, reverse=True)
-# ----------------------------
-
 def getTopFeaturesReport(  \
     orderedFeatures,	# features: [ ('feature name', coef), ...]
     num=20,		# number of features w/ highest & lowest coefs to rpt
@@ -928,44 +918,6 @@ def getTopFeaturesReport(  \
 
     return output
 # ---------------------------
-
-def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
-		    classifier,	# fitted classifier from the pipeline
-		    outputFile,	# filename (string) or file obj (e.g., stdout)
-		    values=None,# list of feature values, one for each feature
-				# This is some number per feature based on
-				#   analysis of the features. Typical example:
-				#   number of documents each feature appears in
-				#   (but could be anything)
-				# Values are printed with %d. This could
-				#  become a problem....
-    ):
-    '''
-    Write the full list of feature names to the file
-    if values = [ ], should be numeric list parallel to feature names
-	we will print these after the feature name
-    if classifier can provide feature coefficients, we will print these too
-    All "|" delimited.
-    Assumes:  vectorizer has get_feature_names() method
-    '''
-    delimiter = '|'
-    featureNames = vectorizer.get_feature_names()
-
-    hasValues = values != None
-
-    hasCoef = hasattr(classifier, 'coef_')
-    if hasCoef: coefficients = classifier.coef_[0].tolist()
-
-    if type(outputFile) == type(''): fp = open(outputFile, 'w')
-    else: fp = outputFile
-
-    for i,f in enumerate(featureNames):
-	fp.write(f)
-	if hasValues: fp.write(delimiter + '%d' % values[i])
-	if hasCoef:   fp.write(delimiter + '%+5.4f' % coefficients[i])
-	fp.write('\n')
-    return 
-# ----------------------------
 
 def getFormattedTime():
     return time.strftime("%Y/%m/%d-%H-%M-%S")
@@ -1006,9 +958,8 @@ def getRandomSeedReport( seedDict ):
     return output
 # ---------------------------
 
-if __name__ == "__main__":
-    # ad hoc test code
-    if True:	# DocumentSetLoader testing
+if __name__ == "__main__":   ############### ad hoc test code ##############3
+    if True:	# DocumentSet testing
 	print "docs 1"
 	d = DocumentSet()
 

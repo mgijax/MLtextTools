@@ -13,6 +13,7 @@ import os.path
 import re
 import string
 
+from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 import nltk.stem.snowball as nltk
 
@@ -75,7 +76,82 @@ def predictionType( y_true,		# true value, typically 0/1 or yes/no
     return retVal
 # ---------------------------
 
+def getOrderedFeatures( vectorizer,     # fitted vectorizer from a pipeline
+                        classifier      # trained classifier from a pipeline
+    ):
+    '''
+    Return list of pairs, [ (feature, coef), (feature, coef), ... ]
+        ordered from highest coef to lowest.
+    Assumes:  vectorizer has get_feature_names() method
+    '''
+    if not hasattr(classifier, 'coef_'):   # not all classifiers have coef's
+        return []
+
+    coefficients = classifier.coef_[0].tolist()
+    featureNames = vectorizer.get_feature_names()
+
+    pairList = zip(featureNames, coefficients)
+
+    selCoef = lambda x: x[1]    # select the coefficient in the pair
+    return sorted(pairList, key=selCoef, reverse=True)
 # ---------------------------
+
+class FeatureDocCounter(BaseEstimator, TransformerMixin):
+    """
+    An sklearn Estimator that gives you access to the number of documents each
+        feature occurs in.
+    Put this "Estimator" into your pipeline after the vectorizer,
+    then Access this list of counts via getValues()
+
+    Example Usage:
+    # (1) define the featureEvaluator step in your pipeline
+
+	import sklearnHelperLib as skHelper
+	pipeline = Pipeline( [
+	('vectorizer',       CountVectorizer(),),
+	('featureEvaluator', skHelper.FeatureDocCounter()),
+	('classifier',       SGDClassifier() ),
+	] )
+    # (2) Run your GridSearchCV
+
+	gs = GridSearchCV(pipeline, ...)
+	gs.fit( docs, y)
+
+    # (3) get your featureEvaluator back from the best_estimator
+
+        featureEvaluator = gs.best_estimator.named_steps['featureEvaluator']
+	featureDocCounts = featureEvaluator.getValues()
+
+	# now featureDocCounts is a list parallel to the vectorizer's
+	#   feature names
+	vectorizer = gs.best_estimator.named_steps['vectorizer']
+	featureNames = vectorizer.get_feature_names()
+
+	for feat, count in zip(featureNames, featureDocCounts):
+	    ...
+    """
+    def transform(self, X):
+        '''don't actually transform X, just gather the counts.'''
+
+        # I wish I understood scipy.sparse matrices and/or numpy.matrix,
+        #   but these magic words seem to work (after trial and error)
+        self.docCounts = X.sum(axis=0,dtype=int).tolist()[0]
+        return X
+
+    def fit(self, X, y=None, **fit_params):
+        '''nothing to actually fit'''
+        return self
+
+    def getValues(self):
+        """ Return list of counts, one integer for each feature,
+            in feature order.
+            Each count is the number of docs the feature occurs in.
+        """
+        return self.docCounts
+# end class FeatureDocCounter ----------
+
+# ---------------------------
+# Stemming....
 # Probably best to preprocess the whole data set once
 #  and stem it (and remove URLs) if stemming makes a big enough difference.
 #
