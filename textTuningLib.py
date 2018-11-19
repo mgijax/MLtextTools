@@ -246,6 +246,38 @@ class TextPipelineTuningHelper (object):
 					  pos_label=self.yClassToScore)
     #---------------------
 
+    def loadTrainValTestSets(self):
+
+	####### training set
+	trainSet = DocumentSet().load(self.trainDataPath)
+
+	self.sampleNames_train = trainSet.getSampleNames()
+	self.docs_train        = trainSet.getDocs()
+	self.y_train           = trainSet.getYvalues()
+
+	####### test set
+	if self.testDataPath:
+	    testSet = DocumentSet().load(self.testDataPath)
+	else:		# no specified test set, split random set from training	
+	    testSet = trainSet.split(splitSize=self.testSplit,
+						randomSeed=self.randForSplit)
+	self.sampleNames_test = testSet.getSampleNames()
+	self.docs_test        = testSet.getDocs()
+	self.y_test           = testSet.getYvalues()
+
+	####### Validation set
+	if self.valDataPath:
+	    self.haveValSet = True
+	    valSet = DocumentSet().load(self.valDataPath)
+
+	    self.sampleNames_val = valSet.getSampleNames()
+	    self.docs_val        = valSet.getDocs()
+	    self.y_val           = valSet.getYvalues()
+	else:
+	    self.haveValSet = False
+
+    #---------------------
+
     def getGridSearchParams(self):
 	"""
 	Figure out what doc set, y values, cv value to use for the GridSearchCV.
@@ -284,36 +316,18 @@ class TextPipelineTuningHelper (object):
 	    code, I figured out that the structure above is what the cv list
 	    (iterator) needs to be.
 	"""
-	docSets = DocumentSetLoader(self.trainDataPath, self.valDataPath,
-				    self.testDataPath,
-				    testSplit=self.testSplit,
-				    randomSeed=self.randForSplit)
-
-	self.sampleNames_train = docSets.trainingSet.sampleNames
-	self.docs_train        = docSets.trainingSet.docs
-	self.y_train           = docSets.trainingSet.y
-
-	self.sampleNames_test = docSets.testSet.sampleNames
-	self.docs_test        = docSets.testSet.docs
-	self.y_test           = docSets.testSet.y
-
-	if docSets.validationSet == None: 	# no val set, use k-fold
-	    self.haveValSet = False
-	    docs_gs         = self.docs_train
-	    y_gs            = self.y_train
-	    cv              = 2  # JIM: small cv for testing self.numCV
-	else:
-	    self.haveValSet      = True
-	    self.sampleNames_val = docSets.validationSet.sampleNames
-	    self.docs_val        = docSets.validationSet.docs
-	    self.y_val           = docSets.validationSet.y
-
+	if self.haveValSet: 
 	    docs_gs = self.docs_train + self.docs_val
 	    y_gs    = np.concatenate( (self.y_train, self.y_val) )
 
 	    lenTrain = len(self.docs_train)
 	    lenVal   = len(self.docs_val)
 	    cv = [ (range(lenTrain), range(lenTrain, lenTrain+lenVal) ), ]
+
+	else:				# no val set, use k-fold
+	    docs_gs         = self.docs_train
+	    y_gs            = self.y_train
+	    cv              = 2  # JIM: small cv for testing self.numCV
 
 	return docs_gs, y_gs, cv
     #---------------------
@@ -326,6 +340,9 @@ class TextPipelineTuningHelper (object):
 	# "y_" are the correct classifications (labels) for the corresponding
 	#   samples
 	# _gs = grid search set
+
+	self.loadTrainValTestSets()
+
 	docs_gs, y_gs, cv = self.getGridSearchParams()
 
 	self.gs = GridSearchCV( self.pipeline,
@@ -374,7 +391,6 @@ class TextPipelineTuningHelper (object):
 	if self.writeFeatures:
 	    writeFeatures(self.bestVectorizer, self.bestClassifier,
 				    self.featureFile, values=self.featureValues)
-
 	output = self.getReportStart()
 
 	output += getFormattedMetrics("Training Set", self.y_train,
@@ -529,92 +545,113 @@ class TextPipelineTuningHelper (object):
 # ---------------------------
 # ---------------------------
 
-# FIXME: the next two classes are oddly structured. Need to rethink
-# Probably: change DocumentSet to take a path parameter and load the
-#           doc set. (that's it. just load the document set)
-#           Then DocumentSetLoader should be responsible for splitting
-#		training and test sets.
-
 class DocumentSet (object):
-    # a data structure with 3 parallel lists:  docs, y, sampleNames
-    def __init__(self, docs=[], y=[], sampleNames=[]):
-	self.docs = docs
-	self.y = y
-	self.sampleNames = sampleNames
-# ---------------------------
-
-class DocumentSetLoader (object):
     """
-    Load training, validation, and test data sets from files or directories.
-    Assumes the trainingSetPath is the path to a non-empty dataset.
-    Validation set may be empty (path = None).
-    If test set path is None, a random test set will be pulled out of the
-	training set using testSplit and randomSeed
-	(so upon instantiation, we will always have a trainingSet and testSet)
-    You can access these sets like:
-	foo = DocumentSetLoader( trainingSetPath, valSetPath, testSetPath)
-	# foo.trainingSet.docs
-	# foo.trainingSet.y
-	# foo.trainingSet.sampleNames
-	# foo.testSet.docs
-	# ...
-    FIXME: need to document this class and methods better
+    IS: a set of documents along with their y_values and sampleNames
+    HAS: parallel lists: documents, y_values, sampleNames along with
+	information about where the docs were loaded from
+    DOES:   Load from a file or directory structure using sklearn load_files(),
+	    Split into two doc sets, 
+	    Convert y_values to and from lists and np.array
+    FIXME: maybe this should live in sampleDataLib.py ??
     """
     def __init__(self,
-		trainingSetPath,
-		validationSetPath=None,
-		testSetPath=None,
-		testSplit=0.20,
-		randomSeed=None,
-		):
-	self.validationSet = self.getDocSet(validationSetPath)
-	self.trainingSet   = self.getDocSet(trainingSetPath)
-	self.testSet       = self.getDocSet(testSetPath)
+		docs=[],	# list of document (strings)
+		y=[],		# list of ints 0,1 or np.array w/ 0,1
+		sampleNames=[],	# list of names, (strings)
+	):
+	"""
+	Assumes: y is as above.
+	"""
+	if type(y) == type([]): self.y = np.array(y)	# story as np.array
+	else: self.y = y
 
-	if self.testSet == None:
-	    # split training set into random training/test sets
+	self.docs        = docs
+	self.sampleNames = sampleNames
+	self.pathName    = None		# where loaded from
+	self.splitSize   = None		# if we do split, fraction to new set
+	self.randomSeed  = None		# if we do split, use for random subset
 
-		# sample names
-		# documents (strings) themselves
-		# correct classifications (labels) for the samples
-	    sampleNames_train, sampleNames_test,	\
-	    docs_train,        docs_test,		\
-	    y_train,           y_test = train_test_split( \
-						self.trainingSet.sampleNames,
-						self.trainingSet.docs,
-						self.trainingSet.y,
-						test_size=testSplit,
-						random_state=randomSeed)
-	    self.trainingSet = DocumentSet(docs_train,y_train,sampleNames_train)
-	    self.testSet = DocumentSet(docs_test, y_test, sampleNames_test)
+    # ---------------------------
+    def getDocs(self):		return self.docs
+    def getSampleNames(self):	return self.sampleNames
+    def getPathName(self):	return self.pathName
+    def getSplitSize(self):	return self.splitSize
+    def getRandomSeed(self):	return self.randomSeed
+    def getYvalues(self):	return self.y		# as np.array
+    def getYvaluesAsList(self):	return self.y.tolist()	# as list
     # ---------------------------
 
-    def getDocSet(self, path):
-	if path == None:  return None
-	path = os.path.realpath(path)
-	if os.path.isdir(path):
-	    docSet = self.getDocSetFromDir(path)
+    def split(self,
+		splitSize=None,		# if float, fraction for new DocumentSet
+					# if int, size of new DocumentSet
+					# if None, use train_test_split default
+		randomSeed=None,	# int, use this seed for random
+					#   selection of split subset
+					# None means use a random value
+	):
+	"""
+	Split self into two DocumentSets.
+	Return new DocumentSet of random subset with splitSize docs.
+	(remove the random subset of docs from self)
+	"""
+	self.splitSize  = splitSize
+	self.randomSeed = randomSeed
+
+	self.sampleNames, sampleNames_new,	\
+	self.docs,        docs_new,		\
+	self.y,           y_new = train_test_split( \
+					    self.sampleNames,
+					    self.docs,
+					    self.y,
+					    test_size=self.splitSize,
+					    random_state=self.randomSeed)
+
+	return DocumentSet(docs=docs_new, y=y_new, sampleNames=sampleNames_new)
+    # ---------------------------
+
+    def load(self, path):
+	"""
+	Load self from the specified directory path.
+	Path can be a
+	    Directory name, in which case we assume there are subdirectories
+		to be loaded by sklearn load_files()
+	    Filename, in which case we assume it is a file of records that
+		can be loaded by sampleDataLib.SampleRecord().
+	Return self
+	"""
+	self.path = os.path.realpath(path)
+	if os.path.isdir(self.path):
+	    self.loadFromDir(self.path)
 	else:
-	    docSet = self.getDocSetFromFile(path)
-	return docSet
+	    self.loadFromFile(self.path)
+
+	return self
     # ---------------------------
 
-    def getDocSetFromDir(self, path):
-	dataSet = load_files( path )
-	return DocumentSet( dataSet.data, dataSet.target, 
-				self.computeSampleNames( dataSet.filenames) )
+    def loadFromDir(self, path):
+
+	dataSet          = load_files( path )
+	self.docs        = dataSet.data
+	self.y           = dataSet.target
+	self.sampleNames = self.fileNamesToSampleNames(dataSet.filenames)
+
+	return self
     # ---------------------------
 
-    def computeSampleNames(self, filenames):
-	''' Convert list of filenames into Samplenames '''
-	return [ os.path.basename(fn) for fn in filenames ]
+    def fileNamesToSampleNames(self, filenames):
+	''' Convert list of filenames into sampleNames:
+		file basenames without any file extension.
+	    If this conversion doesn't work for you, subclass and override
+		this method.
+	'''
+	return [ os.path.splitext(os.path.basename(fn))[0] for fn in filenames ]
     # ---------------------------
 
-    def getDocSetFromFile(self, path):
-	# read sample file
-	docs = []		# docs in the sample file
-	y = []			# their y values (0 or 1)
-	sampleNames = []	# their sample names
+    def loadFromFile(self, path):
+	self.docs = []
+	self.y = []
+	self.sampleNames = []
 
         rcds = open(path,'r').read().split(sampleDataLib.RECORDSEP)
 
@@ -623,15 +660,13 @@ class DocumentSetLoader (object):
 
 	for rcd in rcds:
 	    sr = sampleDataLib.SampleRecord(rcd)
-	    docs.append(sr.getDocument())
-	    y.append   (sr.getKnownYvalue())
-	    sampleNames.append(sr.getSampleName())
+	    self.docs.append       (sr.getDocument())
+	    self.y.append          (sr.getKnownYvalue())
+	    self.sampleNames.append(sr.getSampleName())
 
-	return DocumentSet( docs, np.array(y), sampleNames)
-	#return DocumentSet( docs, y, sampleNames)
-    # ---------------------------
-
-# end class DocumentSetLoader ---------------------------
+	self.y = np.array(self.y)
+	return self
+# end class DocumentSet ---------------------------
 
 
 class FeatureDocCounter(BaseEstimator, TransformerMixin):
@@ -974,18 +1009,23 @@ def getRandomSeedReport( seedDict ):
 if __name__ == "__main__":
     # ad hoc test code
     if True:	# DocumentSetLoader testing
-	d = DocumentSetLoader('Data/smallset/figureText.txt',
-				validationSetPath='data/smallSet',
-				testSetPath='data/smallSet',
-				testSplit=0.1, randomSeed=None)
-	print len(d.trainingSet.docs)
-	print d.trainingSet.y[:5]
-	print d.trainingSet.sampleNames[:5]
-	print len(d.testSet.docs)
-	print d.testSet.y[:5]
-	print d.testSet.sampleNames[:5]
-	print type(d.testSet.y)
-	if d.validationSet != None:
-	    print len(d.validationSet.docs)
-	    print d.validationSet.y[:5]
-	    print d.validationSet.sampleNames[:5]
+	print "docs 1"
+	d = DocumentSet()
+
+	d.load('Data/smallset/figureText.txt')
+	print len(d.getDocs())
+	print d.getSampleNames()[:5]
+	print d.getYvalues()[:5]
+	print d.getYvaluesAsList()[:5]
+
+	d2 = d.split(splitSize=0.2)
+	print "docs 1 after split"
+	print len(d.getDocs())
+	print d.getSampleNames()[:5]
+	print "docs 2"
+	print len(d2.getDocs())
+	print d2.getSampleNames()[:5]
+
+	print "docs 3"
+	d3 = DocumentSet()
+	print d3.load('Data/smallset').getSampleNames()[:5]
