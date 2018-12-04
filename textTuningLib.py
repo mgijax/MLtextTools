@@ -46,8 +46,9 @@ Other functionality:
 
 * Support for generating random seeds or using fixed specified seeds.
 
-* Provides a pipeline step, FeatureDocCounter, which you can put into a
-    pipeline just after the vectorizer step, and it will give you access to
+* Supports use of a pipeline step, FeatureDocCounter (defined in
+    sklearnHelperLib), which you can put into a pipeline just after the
+    vectorizer step, and it will give you access to
     the number of documents each feature appears in.
 
 Reports...
@@ -89,27 +90,10 @@ SSTART = "### "			# report output section start delimiter
 
 def parseCmdLine():
     """
-    JIM: check that this list is still accurate
-    shared among the ModelTuning scripts
     Handles cmdline args and config file, returning dict that combines them.
-    Keys:
-    trainDataPath:	dir path to training data
-    verbose:		boolean - print longer tuning report
-    randForSplit:	int
-    randForClassifier:	int
-    tuningIndexFile:	index file name to write to
-    wIndex:		boolean - write indexfile
-    wPredictions:	boolean - write predictions file
-    predFilePrefix:	filename prefix for the prediction output files
-    gridSearchBeta:	int
-    compareBeta:	int
-    testSplit:		float
-    gridSearchCV:	int
-    yClassNames:	list of class names corresponding to Y values
-    yClassToScore:	index in yClassNames for class to use for f-score
-    repClassNames:	list of class names ordered as we want to report them
-    rptClassMapping: 	mapping of y_vals to classes in repClassNames 
-    rptNum:      	how many of rptClassNames to show in classi'cation rpt
+    The Keys for the returned dict are easily discernable in the code below.
+	for cmd line args, they are the 'dest' argument in add_argument()
+	for non-cmd line args, they keys are set directly.
     """
     cp = ConfigParser.ConfigParser()
     cp.optionxform = str # make keys case sensitive
@@ -210,13 +194,13 @@ class TextPipelineTuningHelper (object):
 	pipelineParameters,
 	randomSeeds={'randForSplit':1},	# random seeds. Assume all are not None
 	):
-	# JIM: does it really make sense to copy all these to self. ?
-	#      the idea was that only this constructor access args.
 	self.pipeline           = pipeline
 	self.pipelineParameters = pipelineParameters
 	self.randomSeeds        = randomSeeds
 	self.randForSplit       = randomSeeds['randForSplit']	# required seed
 
+	# JIM: the idea was that only this constructor accesses args,
+	#      but does it really make sense to copy all these to self. ?
 	self.trainDataPath      = args.trainDataPath
 	self.valDataPath        = args.valDataPath
 	self.testDataPath       = args.testDataPath
@@ -239,13 +223,22 @@ class TextPipelineTuningHelper (object):
 	self.rptClassNames      = args.rptClassNames
 	self.rptClassMapping    = args.rptClassMapping
 	self.rptNum             = args.rptNum
-	self.time = getFormattedTime()
 
+	self.time = getFormattedTime()
 	self.scorer = make_scorer(fbeta_score, beta=self.gridSearchBeta,
 					  pos_label=self.yClassToScore)
     #---------------------
 
     def loadTrainValTestSets(self):
+	"""
+	Get the training, test, & validation sets (val is optional).
+	This means setting three parallel lists:
+	    self.sampleNames_xxx	names (IDs) of the docs
+	    self.docs_xxx		the docs themselves (string)
+	    self.y_xxx			the class name index (0, 1)
+	    				y_xxx is an np.array
+	    For xxx in "train", "test", and "val"
+	"""
 
 	####### training set
 	trainSet = DocumentSet().load(self.trainDataPath)
@@ -314,6 +307,8 @@ class TextPipelineTuningHelper (object):
 	    It is not very well documented, but by chasing down the source
 	    code, I figured out that the structure above is what the cv list
 	    (iterator) needs to be.
+
+	    Maybe there is a better way to do this, but I haven't found it.
 	"""
 	if self.haveValSet: 
 	    docs_gs = self.docs_train + self.docs_val
@@ -326,7 +321,7 @@ class TextPipelineTuningHelper (object):
 	else:				# no val set, use k-fold
 	    docs_gs         = self.docs_train
 	    y_gs            = self.y_train
-	    cv              = 2  # JIM: small cv for testing self.numCV
+	    cv              = self.numCV
 
 	return docs_gs, y_gs, cv
     #---------------------
@@ -429,7 +424,7 @@ class TextPipelineTuningHelper (object):
 					    nFeatures=nFeaturesReport)
 
 	    # false positives/negatives report.
-	    # Should this be for validation set or test or both?
+	    # JIM: Should this be for validation set or test or both?
 	    falsePos,falseNeg = skHelper.getFalsePosNeg( self.y_test,
 					self.y_predicted_test,
 					self.sampleNames_test,
@@ -514,7 +509,8 @@ class TextPipelineTuningHelper (object):
     # ---------------------------
 
     def getSampleSummaryReport(self,):
-	""" Return string that summarizes the subsets of samples (training,
+	"""
+	Return string that summarizes the subsets of samples (training,
 	    validation, test)
 	"""
 	# -----------------
@@ -532,6 +528,7 @@ class TextPipelineTuningHelper (object):
 	output += "%-20s: %12s %12s %12s %12s\n" % \
 		    ( ' ', 'Samples', 'Positive', 'Negative', '% Positive')
 
+	# One line for each document set
 	if self.haveValSet:
 	    output += formatter('Validation Set', self.y_val)
 	output += formatter('Training Set', self.y_train)
@@ -545,9 +542,9 @@ class TextPipelineTuningHelper (object):
 
 class DocumentSet (object):
     """
-    IS: a set of documents along with their y_values and sampleNames
-    HAS: parallel lists: documents, y_values, sampleNames along with
-	information about where the docs were loaded from
+    IS:     a set of documents along with their y_values and sampleNames
+    HAS:    parallel lists: documents, y_values, sampleNames along with
+	      information about where the docs were loaded from
     DOES:   Load from a file or directory structure using sklearn load_files(),
 	    Split into two doc sets, 
 	    Convert y_values to and from lists and np.array
@@ -640,10 +637,11 @@ class DocumentSet (object):
     # ---------------------------
 
     def fileNamesToSampleNames(self, filenames):
-	''' Convert list of filenames into sampleNames:
-		file basenames without any file extension.
-	    If this conversion doesn't work for you, subclass and override
-		this method.
+	'''
+	Convert list of filenames into sampleNames:
+	    file basenames without any file extension.
+	If this conversion doesn't work for you, subclass and override
+	    this method.
 	'''
 	return [ os.path.splitext(os.path.basename(fn))[0] for fn in filenames ]
     # ---------------------------
