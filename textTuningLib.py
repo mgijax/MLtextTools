@@ -224,7 +224,8 @@ class TextPipelineTuningHelper (object):
 	self.rptClassMapping    = args.rptClassMapping
 	self.rptNum             = args.rptNum
 
-	self.time = getFormattedTime()
+	self.startTimeStr = getFormattedTime()
+	self.startTime    = time.time()
 	self.scorer = make_scorer(fbeta_score, beta=self.gridSearchBeta,
 					  pos_label=self.yClassToScore)
     #---------------------
@@ -329,6 +330,12 @@ class TextPipelineTuningHelper (object):
     def fit(self):
 	'''
 	run the GridSearchCV
+	FIXME: seems like we might often be running this on a fixed training
+	    and validation set without multiple parameter options
+	    - say on a newly preprocessed set of data.
+	    So we really don't need to do the gridsearch itself.
+	    Should think about refactoring to skip the gridsearch itself
+	    in these cases.
 	'''
 	# using _train _test variable names as is the custom in sklearn.
 	# "y_" are the correct classifications (labels) for the corresponding
@@ -353,6 +360,7 @@ class TextPipelineTuningHelper (object):
 	# Now that we've found the estimator that scores best on val set,
 	# retrain the bestEstimator on the full docs_gs set
 	# (this is full training set or training set + validation set)
+	self.verboseWrite("Retraining best pipeline on training + val sets\n")
 	self.bestEstimator.fit( docs_gs, y_gs)
 
 	self.bestVectorizer = self.bestEstimator.named_steps['vectorizer']
@@ -363,14 +371,24 @@ class TextPipelineTuningHelper (object):
 	else: self.featureValues = self.featureEvaluator.getValues()
 
 	# run estimator on the training, val, test sets so we can compare
+	self.verboseWrite("Predicting on training set\n")
 	self.y_predicted_train = self.bestEstimator.predict(self.docs_train)
 
 	if self.haveValSet:
+	    self.verboseWrite("Predicting on validation set\n")
 	    self.y_predicted_val  = self.bestEstimator.predict(self.docs_val)
 
+	self.verboseWrite("Predicting on test set\n")
 	self.y_predicted_test  = self.bestEstimator.predict(self.docs_test)
+	self.verboseWrite("Done with predictions\n")
 
 	return self		# customary for fit() methods
+    # ---------------------------
+
+    def verboseWrite(self, msg):
+	if self.gsVerbose:
+	    sys.stderr.write(getFormattedTime() + " " + msg)
+	    sys.stderr.flush()
     # ---------------------------
 
     def getReports(self,
@@ -441,7 +459,7 @@ class TextPipelineTuningHelper (object):
 
     def getReportStart(self):
 
-	output = SSTART + "Start Time %s  %s" % (self.time, sys.argv[0])
+	output = SSTART + "Start Time %s  %s" % (self.startTimeStr, sys.argv[0])
 	if self.wIndex: output += "\tindex file: %s" % self.tuningIndexFile
 	output += "\n"
 	output += "Training data path:   %s\tGridSearch Beta: %d\n" % \
@@ -454,7 +472,8 @@ class TextPipelineTuningHelper (object):
     # ---------------------------
 
     def getReportEnd(self):
-	return SSTART + "End Time %s\n" % getFormattedTime()
+	return SSTART + "End Time %s. Total %9.2f seconds\n" % \
+	    (getFormattedTime(), time.time() - self.startTime)
     # ---------------------------
 
     def writeIndexFile(self, tuningIndexFile, compareBeta):
@@ -469,7 +488,7 @@ class TextPipelineTuningHelper (object):
 
 	with open(tuningIndexFile, 'a') as fp:
 	    fp.write("%s\tPRF%d,F1\t%4.2f\t%4.2f\t%4.2f\t%4.2f\t%s\n" % \
-	    (self.time,
+	    (self.startTimeStr,
 	    compareBeta,
 	    precision_score(y_true, y_predicted, pos_label=self.yClassToScore),
 	    recall_score(   y_true, y_predicted, pos_label=self.yClassToScore),
@@ -858,7 +877,7 @@ def getFormattedMetrics( \
 			target_names=target_names,
 			labels=rptClassMapping[:rptNum], )
 		    )
-    output += "%s F%d: %5.3f (%s)\n\n" % \
+    output += "%s F%d: %7.5f (%s)\n\n" % \
 	    (title[:5], beta,
 	    fbeta_score(y_true,y_predicted,beta, pos_label=yClassToScore ),
 	    yClassNames[yClassToScore],
