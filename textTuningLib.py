@@ -105,8 +105,9 @@ def parseCmdLine():
     # config file params that are defaults for command line options
     TRAINING_DATA     = cp.get     ("DEFAULT", "TRAINING_DATA")
     TUNING_INDEX_FILE = cp.get     ("MODEL_TUNING", "TUNING_INDEX_FILE")
-    FEATURE_OUTPUT_FILE = cp.get   ("MODEL_TUNING", "FEATURE_OUTPUT_FILE")
-    PRED_OUTPUT_FILE_PREFIX = cp.get("MODEL_TUNING", "PRED_OUTPUT_FILE_PREFIX")
+
+    basename = os.path.basename(sys.argv[0])
+    OUTPUT_FILE_PREFIX = os.path.splitext(basename)[0]
 
     # command line parameters
     parser = argparse.ArgumentParser( \
@@ -156,13 +157,13 @@ def parseCmdLine():
 			action='store_false', default=False,
 	    help="don't write predictions for test & training sets (default)")
 
-    parser.add_argument('--predfiles', dest='predFilePrefix', 
-			default=PRED_OUTPUT_FILE_PREFIX,
-	    help='prefix for prediction output filenames. Default: %s' % \
-						    PRED_OUTPUT_FILE_PREFIX)
+    parser.add_argument('--outprefix', dest='outputFilePrefix', 
+			default=OUTPUT_FILE_PREFIX,
+	    help='output file prefix (features & preds). Default: %s' % \
+						    OUTPUT_FILE_PREFIX)
     parser.add_argument('--features', dest='writeFeatures',
 			action='store_true', default=False,
-	    help="write full feature set to %s" % FEATURE_OUTPUT_FILE)
+			help="write feature file" )
 
     args =  parser.parse_args()
 
@@ -171,7 +172,7 @@ def parseCmdLine():
     args.compareBeta     = cp.getint  ("MODEL_TUNING", "COMPARE_BETA")
     args.testSplit       = cp.getfloat("MODEL_TUNING", "TEST_SPLIT")
     args.numCV           = cp.getint  ("MODEL_TUNING", "NUM_CV")
-    args.featureFile     = cp.get     ("MODEL_TUNING", "FEATURE_OUTPUT_FILE")
+#    args.featureFile     = cp.get     ("MODEL_TUNING", "FEATURE_OUTPUT_FILE")
     args.yClassNames     = eval(cp.get("CLASS_NAMES",  "y_class_names"))
     args.yClassToScore   = cp.getint  ("CLASS_NAMES",  "y_class_to_score")
     args.rptClassNames   = eval(cp.get("CLASS_NAMES",  "rpt_class_names"))
@@ -211,9 +212,9 @@ class TextPipelineTuningHelper (object):
 	self.tuningIndexFile    = args.tuningIndexFile
 	self.wIndex             = args.wIndex
 	self.wPredictions       = args.wPredictions
-	self.predFilePrefix     = args.predFilePrefix
+	self.outputFilePrefix   = args.outputFilePrefix
 	self.writeFeatures      = args.writeFeatures
-	self.featureFile	= args.featureFile
+	self.featureFile	= args.outputFilePrefix + "_features.txt"
 	self.compareBeta        = args.compareBeta
 	self.verbose            = args.verbose
 	self.gsVerbose          = args.gsVerbose
@@ -355,11 +356,12 @@ class TextPipelineTuningHelper (object):
 				)
 	self.gs.fit( docs_gs, y_gs )
 
+	# bestEstimator with the best params evaluated on val set or cv
 	self.bestEstimator  = self.gs.best_estimator_
 
-	# Now that we've found the estimator that scores best on val set,
+	# Now that we've found the estimator that scores best on val set or cv,
 	# retrain the bestEstimator on the full docs_gs set
-	# (this is full training set or training set + validation set)
+	# (this is full training set w/ all folds or training set + val set)
 	self.verboseWrite("Retraining best pipeline on training + val sets\n")
 	self.bestEstimator.fit( docs_gs, y_gs)
 
@@ -505,7 +507,7 @@ class TextPipelineTuningHelper (object):
 	Write files with predictions from training set and test set
 	'''
 	writePredictionFile( \
-	    self.predFilePrefix + "_train.out",
+	    self.outputFilePrefix + "_train_pred.txt",
 	    self.bestEstimator,
 	    self.docs_train,
 	    self.sampleNames_train,
@@ -516,7 +518,7 @@ class TextPipelineTuningHelper (object):
 	    )
 	# JIM: include validation set predictions too?
 	writePredictionFile( \
-	    self.predFilePrefix + "_test.out",
+	    self.outputFilePrefix + "_test_pred.txt",
 	    self.bestEstimator,
 	    self.docs_test,
 	    self.sampleNames_test,

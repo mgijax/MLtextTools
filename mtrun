@@ -6,4 +6,4 @@
 pyscript="${1}"
 nopy=`basename -s .py ${pyscript}`
 shift
-python ${pyscript} -i --predfile ${nopy} $* | tee -a ${nopy}.log | more; 
+python ${pyscript} -i $* | tee -a ${nopy}.log | more; 
