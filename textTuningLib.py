@@ -351,19 +351,16 @@ class TextPipelineTuningHelper (object):
 				self.pipelineParameters,
 				scoring= self.scorer,
 				cv=      cv,
+				refit=   True,
 				verbose= self.gsVerbose,
-				n_jobs=  -1,
+				n_jobs=  4,
 				)
 	self.gs.fit( docs_gs, y_gs )
 
 	# bestEstimator with the best params evaluated on val set or cv
+	# Note, this has been trained on train + val set or whole train set
+	#  (without any cv)
 	self.bestEstimator  = self.gs.best_estimator_
-
-	# Now that we've found the estimator that scores best on val set or cv,
-	# retrain the bestEstimator on the full docs_gs set
-	# (this is full training set w/ all folds or training set + val set)
-	self.verboseWrite("Retraining best pipeline on training + val sets\n")
-	self.bestEstimator.fit( docs_gs, y_gs)
 
 	self.bestVectorizer = self.bestEstimator.named_steps['vectorizer']
 	self.bestClassifier = self.bestEstimator.named_steps['classifier']
@@ -372,16 +369,20 @@ class TextPipelineTuningHelper (object):
 	if self.featureEvaluator == None: self.featureValues = None
 	else: self.featureValues = self.featureEvaluator.getValues()
 
-	# run estimator on the training, val, test sets so we can compare
+	# run estimator on the training, test sets so we can compare
 	self.verboseWrite("Predicting on training set\n")
 	self.y_predicted_train = self.bestEstimator.predict(self.docs_train)
 
+	self.verboseWrite("Predicting on test set\n")
+	self.y_predicted_test  = self.bestEstimator.predict(self.docs_test)
+
+	# run on validation set so we can see how it does & compare to test
 	if self.haveValSet:
+	    # if val preds score close to training set, seems like overfit
+	    # otherwise, should be close to test set or somewhat intermediate
 	    self.verboseWrite("Predicting on validation set\n")
 	    self.y_predicted_val  = self.bestEstimator.predict(self.docs_val)
 
-	self.verboseWrite("Predicting on test set\n")
-	self.y_predicted_test  = self.bestEstimator.predict(self.docs_test)
 	self.verboseWrite("Done with predictions\n")
 
 	return self		# customary for fit() methods
@@ -508,7 +509,7 @@ class TextPipelineTuningHelper (object):
 	'''
 	writePredictionFile( \
 	    self.outputFilePrefix + "_train_pred.txt",
-	    self.bestEstimator,
+	    self.bestClassifier,
 	    self.docs_train,
 	    self.sampleNames_train,
 	    self.y_train,
@@ -516,10 +517,9 @@ class TextPipelineTuningHelper (object):
 	    classNames=self.yClassNames,
 	    positiveClass=self.yClassToScore,
 	    )
-	# JIM: include validation set predictions too?
 	writePredictionFile( \
 	    self.outputFilePrefix + "_test_pred.txt",
-	    self.bestEstimator,
+	    self.bestClassifier,
 	    self.docs_test,
 	    self.sampleNames_test,
 	    self.y_test,
@@ -694,12 +694,12 @@ class DocumentSet (object):
 ############################################################
 def writePredictionFile( \
     outputFile,		# file name (string) or file object (e.g., stdout)
-    estimator,		# the trained model to use
-    docs,		# the documents to predict
-    sampleNames,	# sample names for those docs
-    y_true,		# true labels/classifications for those docs 0|1
-    y_predicted,	# predicted labels/classifications for those docs 0|1
-    classNames=['no','yes'],
+    classifier,		# trained classifier used to predict
+    docs,		# [strings] set of (predicted) docs to write predictions
+    sampleNames,	# [strings] sample names for the predicted docs
+    y_true,		# [ 0|1 ] true classifications for the docs
+    y_predicted,	# [ 0|1 ] predicted classifications for the docs
+    classNames=['no','yes'], # class labels
     positiveClass=1,	# index in classNames considered the positive class
     ):
     '''
@@ -712,12 +712,12 @@ def writePredictionFile( \
     
     trueNames = [ classNames[y] for y in y_true ]
     predNames = [ classNames[y] for y in y_predicted ]
-
-    if hasattr(estimator, "decision_function"):
-	conf = estimator.decision_function(docs).tolist()
-	absConf = map(abs, conf)
+    
+    if hasattr(classifier, "decision_function"):	# include confidences
+	confidences = classifier.decision_function(docs).tolist()
+	absConf = map(abs, confidences)
 	predictions = \
-	    zip(sampleNames, trueNames, predNames, predTypes, conf, absConf)
+	 zip(sampleNames, trueNames, predNames, predTypes, confidences, absConf)
 
 	# sort by absolute value of confidence
 	selConf = lambda x: x[5]	# select confidence value 
@@ -768,13 +768,17 @@ def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
     hasCoef = hasattr(classifier, 'coef_')
     if hasCoef: coefficients = classifier.coef_[0].tolist()
 
+    hasImportance = hasattr(classifier, 'feature_importances_')
+    if hasImportance: importances = classifier.feature_importances_.tolist()
+
     if type(outputFile) == type(''): fp = open(outputFile, 'w')
     else: fp = outputFile
 
     for i,f in enumerate(featureNames):
 	fp.write(f)
-	if hasValues: fp.write(delimiter + '%d' % values[i])
-	if hasCoef:   fp.write(delimiter + '%+5.4f' % coefficients[i])
+	if hasValues:     fp.write(delimiter + '%d' % values[i])
+	if hasCoef:       fp.write(delimiter + '%+5.4f' % coefficients[i])
+	if hasImportance: fp.write(delimiter + '%+5.4f' % importances[i])
 	fp.write('\n')
     return 
 # ----------------------------

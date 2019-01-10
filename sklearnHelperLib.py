@@ -36,6 +36,19 @@ def removeNonAscii(text):
     return ''.join([i if ord(i) < 128 else ' ' for i in text])
 #-----------------------------------
 
+def isOneCombination(paramDict,	# { key: [list] } dict whose values are lists
+    ):
+    '''
+    paramDict is a dictionary of GridSearchCV parameters.
+    Return True if there is only one combination of parameters
+    Return False if there are multiple combinations
+    '''
+    for l in paramDict.values():
+	if len(l) > 1: return False
+
+    return True
+#-----------------------------------
+
 def getFalsePosNeg( y_true,		# [true vals], typically 0/1 or yes/no 
                     y_predicted,	# [pred vals], typically 0/1 or yes/no 
                     sampleNames,	# [ sample names]
