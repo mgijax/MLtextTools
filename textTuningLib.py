@@ -509,7 +509,7 @@ class TextPipelineTuningHelper (object):
 	'''
 	writePredictionFile( \
 	    self.outputFilePrefix + "_train_pred.txt",
-	    self.bestClassifier,
+	    self.bestEstimator,
 	    self.docs_train,
 	    self.sampleNames_train,
 	    self.y_train,
@@ -519,7 +519,7 @@ class TextPipelineTuningHelper (object):
 	    )
 	writePredictionFile( \
 	    self.outputFilePrefix + "_test_pred.txt",
-	    self.bestClassifier,
+	    self.bestEstimator,
 	    self.docs_test,
 	    self.sampleNames_test,
 	    self.y_test,
@@ -694,7 +694,7 @@ class DocumentSet (object):
 ############################################################
 def writePredictionFile( \
     outputFile,		# file name (string) or file object (e.g., stdout)
-    classifier,		# trained classifier used to predict
+    pipeline,		# trained pipeline (vectorizer+classifier) for predict
     docs,		# [strings] set of (predicted) docs to write predictions
     sampleNames,	# [strings] sample names for the predicted docs
     y_true,		# [ 0|1 ] true classifications for the docs
@@ -713,8 +713,8 @@ def writePredictionFile( \
     trueNames = [ classNames[y] for y in y_true ]
     predNames = [ classNames[y] for y in y_predicted ]
     
-    if hasattr(classifier, "decision_function"):	# include confidences
-	confidences = classifier.decision_function(docs).tolist()
+    if hasattr(pipeline, "decision_function"):	# include confidences
+	confidences = pipeline.decision_function(docs).tolist()
 	absConf = map(abs, confidences)
 	predictions = \
 	 zip(sampleNames, trueNames, predNames, predTypes, confidences, absConf)
