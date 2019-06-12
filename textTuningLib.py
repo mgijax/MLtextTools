@@ -18,7 +18,7 @@ Assumes:
 * Pipelines have named steps: 'vectorizer', 'classifier' with their
 *   obvious meanings (may have other steps too)
 * The text sample data is in sklearn load_files directory structure
-*   or in files parsable by sampleDataLib.py
+*   OR in files parsable by sampleDataLib.py
 * We are scoring Pipeline parameter runs via an F-Score
 *   (beta is a parameter to this library)
 * We can import sampleDataLib that encapsulates knowledge of the specific
@@ -103,8 +103,8 @@ def parseCmdLine():
     cp.read(cl)
 
     # config file params that are defaults for command line options
-    TRAINING_DATA     = cp.get     ("DEFAULT", "TRAINING_DATA")
-    TUNING_INDEX_FILE = cp.get     ("MODEL_TUNING", "TUNING_INDEX_FILE")
+    TRAINING_DATA     = cp.get("DEFAULT", "TRAINING_DATA")
+    TUNING_INDEX_FILE = cp.get("MODEL_TUNING", "TUNING_INDEX_FILE")
 
     basename = os.path.basename(sys.argv[0])
     OUTPUT_FILE_PREFIX = os.path.splitext(basename)[0]
@@ -214,7 +214,6 @@ class TextPipelineTuningHelper (object):
 	self.wPredictions       = args.wPredictions
 	self.outputFilePrefix   = args.outputFilePrefix
 	self.writeFeatures      = args.writeFeatures
-	self.featureFile	= args.outputFilePrefix + "_features.txt"
 	self.compareBeta        = args.compareBeta
 	self.verbose            = args.verbose
 	self.gsVerbose          = args.gsVerbose
@@ -343,8 +342,10 @@ class TextPipelineTuningHelper (object):
 	#   samples
 	# _gs = grid search set
 
+	self.verboseWrite("Loading sample sets\n")
 	self.loadTrainValTestSets()
 
+	self.verboseWrite("Starting GridSearch fit\n")
 	docs_gs, y_gs, cv = self.getGridSearchParams()
 
 	self.gs = GridSearchCV( self.pipeline,
@@ -353,7 +354,7 @@ class TextPipelineTuningHelper (object):
 				cv=      cv,
 				refit=   True,
 				verbose= self.gsVerbose,
-				n_jobs=  4,
+				n_jobs=  5,
 				)
 	self.gs.fit( docs_gs, y_gs )
 
@@ -404,8 +405,9 @@ class TextPipelineTuningHelper (object):
 	if self.wPredictions:
 	    self.writePredictions()
 	if self.writeFeatures:
+	    featureFile = self.outputFilePrefix + "_features.txt"
 	    writeFeatures(self.bestVectorizer, self.bestClassifier,
-				    self.featureFile, values=self.featureValues)
+					 featureFile, values=self.featureValues)
 	output = self.getReportStart()
 
 	output += getFormattedMetrics("Training Set", self.y_train,
@@ -581,7 +583,7 @@ class DocumentSet (object):
 	"""
 	Assumes: y is as above.
 	"""
-	if type(y) == type([]): self.y = np.array(y)	# story as np.array
+	if type(y) == type([]): self.y = np.array(y)	# store as np.array
 	else: self.y = y
 
 	self.docs        = docs
@@ -679,8 +681,8 @@ class DocumentSet (object):
 
 	for rcd in rcds:
 	    sr = sampleDataLib.SampleRecord(rcd)
-	    self.docs.append       (sr.getDocument())
-	    self.y.append          (sr.getKnownYvalue())
+	    self.docs.append(sr.getDocument())
+	    self.y.append(sr.getKnownYvalue())
 	    self.sampleNames.append(sr.getSampleName())
 
 	self.y = np.array(self.y)
