@@ -51,9 +51,18 @@ Other functionality:
     vectorizer step, and it will give you access to
     the number of documents each feature appears in.
 
-Reports...
-If the 'classifier' supports getting weighted coefficients via
-classifier.coef_, then the output from here can include a TopFeaturesReport
+Outputs:
+* log of the tuning run to stdout. This has lots of subsections like
+    test metrics
+    best pipeline parameters
+    top positive/negative weighted features (If the 'classifier' supports getting
+				    weighted coefficients)
+    vectorizer report
+    false positives/negatives
+    sample set size report
+* (optional) write a test metrics summary line to an index file (usually index.out)
+* (optional) write features + their weights to a feature file
+* (optional) write test and training set prediction files
 
 Coding Convention:
     Use camelCase for all the names here, but
@@ -172,7 +181,6 @@ def parseCmdLine():
     args.compareBeta     = cp.getint  ("MODEL_TUNING", "COMPARE_BETA")
     args.testSplit       = cp.getfloat("MODEL_TUNING", "TEST_SPLIT")
     args.numCV           = cp.getint  ("MODEL_TUNING", "NUM_CV")
-#    args.featureFile     = cp.get     ("MODEL_TUNING", "FEATURE_OUTPUT_FILE")
     args.yClassNames     = eval(cp.get("CLASS_NAMES",  "y_class_names"))
     args.yClassToScore   = cp.getint  ("CLASS_NAMES",  "y_class_to_score")
     args.rptClassNames   = eval(cp.get("CLASS_NAMES",  "rpt_class_names"))
@@ -242,30 +250,18 @@ class TextPipelineTuningHelper (object):
 	"""
 
 	####### training set
-	trainSet = DocumentSet().load(self.trainDataPath)
-
-	self.sampleNames_train = trainSet.getSampleNames()
-	self.docs_train        = trainSet.getDocs()
-	self.y_train           = trainSet.getYvalues()
+	self.trainSet = DocumentSet().load(self.trainDataPath)
 
 	####### test set
 	if self.testDataPath:
-	    testSet = DocumentSet().load(self.testDataPath)
+	    self.testSet = DocumentSet().load(self.testDataPath)
 	else:		# no specified test set, split random set from training	
-	    testSet = trainSet.split(splitSize=self.testSplit,
+	    self.testSet = trainSet.split(splitSize=self.testSplit,
 						randomSeed=self.randForSplit)
-	self.sampleNames_test = testSet.getSampleNames()
-	self.docs_test        = testSet.getDocs()
-	self.y_test           = testSet.getYvalues()
-
 	####### Validation set
 	if self.valDataPath:
 	    self.haveValSet = True
-	    valSet = DocumentSet().load(self.valDataPath)
-
-	    self.sampleNames_val = valSet.getSampleNames()
-	    self.docs_val        = valSet.getDocs()
-	    self.y_val           = valSet.getYvalues()
+	    self.valSet = DocumentSet().load(self.valDataPath)
 	else:
 	    self.haveValSet = False
 
@@ -312,16 +308,17 @@ class TextPipelineTuningHelper (object):
 	    Maybe there is a better way to do this, but I haven't found it.
 	"""
 	if self.haveValSet: 
-	    docs_gs = self.docs_train + self.docs_val
-	    y_gs    = np.concatenate( (self.y_train, self.y_val) )
+	    docs_gs = self.trainSet.getDocs() + self.valSet.getDocs()
+	    y_gs    = np.concatenate( (self.trainSet.getYvalues(),
+						    self.valSet.getYvalues()) )
 
-	    lenTrain = len(self.docs_train)
-	    lenVal   = len(self.docs_val)
+	    lenTrain = self.trainSet.getNumDocs()
+	    lenVal   = self.valSet.getNumDocs()
 	    cv = [ (range(lenTrain), range(lenTrain, lenTrain+lenVal) ), ]
 
 	else:				# no val set, use k-fold
-	    docs_gs         = self.docs_train
-	    y_gs            = self.y_train
+	    docs_gs         = self.trainSet.getDocs()
+	    y_gs            = self.trainSet.getYvalues()
 	    cv              = self.numCV
 
 	return docs_gs, y_gs, cv
@@ -363,8 +360,8 @@ class TextPipelineTuningHelper (object):
 	#  (without any cv)
 	self.bestEstimator  = self.gs.best_estimator_
 
-	self.bestVectorizer = self.bestEstimator.named_steps['vectorizer']
-	self.bestClassifier = self.bestEstimator.named_steps['classifier']
+	self.bestVectorizer   = self.bestEstimator.named_steps['vectorizer']
+	self.bestClassifier   = self.bestEstimator.named_steps['classifier']
 	self.featureEvaluator = self.bestEstimator.named_steps.get( \
 						    'featureEvaluator',None)
 	if self.featureEvaluator == None: self.featureValues = None
@@ -372,17 +369,20 @@ class TextPipelineTuningHelper (object):
 
 	# run estimator on the training, test sets so we can compare
 	self.verboseWrite("Predicting on training set\n")
-	self.y_predicted_train = self.bestEstimator.predict(self.docs_train)
+	self.trainSet.setPredictions( \
+		    self.bestEstimator.predict(self.trainSet.getDocs()) )
 
 	self.verboseWrite("Predicting on test set\n")
-	self.y_predicted_test  = self.bestEstimator.predict(self.docs_test)
+	self.testSet.setPredictions( \
+		    self.bestEstimator.predict(self.testSet.getDocs()) )
 
 	# run on validation set so we can see how it does & compare to test
 	if self.haveValSet:
 	    # if val preds score close to training set, seems like overfit
 	    # otherwise, should be close to test set or somewhat intermediate
 	    self.verboseWrite("Predicting on validation set\n")
-	    self.y_predicted_val  = self.bestEstimator.predict(self.docs_val)
+	    self.valSet.setPredictions( \
+		    self.bestEstimator.predict(self.valSet.getDocs()) )
 
 	self.verboseWrite("Done with predictions\n")
 
@@ -410,8 +410,8 @@ class TextPipelineTuningHelper (object):
 					 featureFile, values=self.featureValues)
 	output = self.getReportStart()
 
-	output += getFormattedMetrics("Training Set", self.y_train,
-				    self.y_predicted_train, self.compareBeta,
+	output += getFormattedMetrics("Training Set", self.trainSet.getYvalues(),
+				    self.trainSet.getPredictions(),self.compareBeta,
 				    rptClassNames=self.rptClassNames,
 				    rptClassMapping=self.rptClassMapping,
 				    rptNum=self.rptNum,
@@ -419,16 +419,16 @@ class TextPipelineTuningHelper (object):
 				    yClassToScore=self.yClassToScore,
 				    )
 	if self.haveValSet:
-	    output += getFormattedMetrics("Validation Set", self.y_val,
-					self.y_predicted_val, self.compareBeta,
-					rptClassNames=self.rptClassNames,
-					rptClassMapping=self.rptClassMapping,
-					rptNum=self.rptNum,
-					yClassNames=self.yClassNames,
-					yClassToScore=self.yClassToScore,
-					)
-	output += getFormattedMetrics("Test Set", self.y_test,
-				    self.y_predicted_test, self.compareBeta,
+	    output += getFormattedMetrics("Validation Set",self.valSet.getYvalues(),
+				    self.valSet.getPredictions(),self.compareBeta,
+				    rptClassNames=self.rptClassNames,
+				    rptClassMapping=self.rptClassMapping,
+				    rptNum=self.rptNum,
+				    yClassNames=self.yClassNames,
+				    yClassToScore=self.yClassToScore,
+				    )
+	output += getFormattedMetrics("Test Set", self.testSet.getYvalues(),
+				    self.testSet.getPredictions(),self.compareBeta,
 				    rptClassNames=self.rptClassNames,
 				    rptClassMapping=self.rptClassMapping,
 				    rptNum=self.rptNum,
@@ -448,9 +448,9 @@ class TextPipelineTuningHelper (object):
 
 	    # false positives/negatives report.
 	    # JIM: Should this be for validation set or test or both?
-	    falsePos,falseNeg = skHelper.getFalsePosNeg( self.y_test,
-					self.y_predicted_test,
-					self.sampleNames_test,
+	    falsePos,falseNeg = skHelper.getFalsePosNeg( self.testSet.getYvalues(),
+					self.testSet.getPredictions(),
+					self.testSet.getSampleNames(),
 					positiveClass=self.yClassToScore)
 
 	    output += getFalsePosNegReport( "Test set", falsePos, falseNeg,
@@ -485,8 +485,8 @@ class TextPipelineTuningHelper (object):
 	'''
 	Handle writing a one-line summary of this run to an index file
 	'''
-	y_true = self.y_test
-	y_predicted = self.y_predicted_test
+	y_true = self.testSet.getYvalues()
+	y_predicted = self.testSet.getPredictions()
 
 	if len(sys.argv) > 0: tuningFile = sys.argv[0]
 	else: tuningFile = ''
@@ -506,29 +506,24 @@ class TextPipelineTuningHelper (object):
     # ---------------------------
 
     def writePredictions(self,):
-	'''
-	Write files with predictions from training set and test set
-	'''
-	writePredictionFile( \
-	    self.outputFilePrefix + "_train_pred.txt",
-	    self.bestEstimator,
-	    self.docs_train,
-	    self.sampleNames_train,
-	    self.y_train,
-	    self.y_predicted_train,
-	    classNames=self.yClassNames,
-	    positiveClass=self.yClassToScore,
-	    )
-	writePredictionFile( \
-	    self.outputFilePrefix + "_test_pred.txt",
-	    self.bestEstimator,
-	    self.docs_test,
-	    self.sampleNames_test,
-	    self.y_test,
-	    self.y_predicted_test,
-	    classNames=self.yClassNames,
-	    positiveClass=self.yClassToScore,
-	    )
+	self.writePredictionsFile( self.outputFilePrefix + "_train_pred.txt",
+								    self.trainSet)
+
+	self.writePredictionsFile( self.outputFilePrefix + "_test_pred.txt",
+								    self.testSet)
+    # ---------------------------
+
+    def writePredictionsFile(self, outputFile, documentSet):
+
+	if type(outputFile) == type(''): fp = open(outputFile, 'w')
+	else: fp = outputFile
+
+	formatter = PredictionFormatter(documentSet, self.bestEstimator,
+		    classNames=self.yClassNames, positiveClass=self.yClassToScore)
+
+	fp.write(formatter.getHeaderText())
+	for line in formatter.getNextPredictionText():
+	    fp.write(line)
     # ---------------------------
 
     def getSampleSummaryReport(self,):
@@ -553,9 +548,9 @@ class TextPipelineTuningHelper (object):
 
 	# One line for each document set
 	if self.haveValSet:
-	    output += formatter('Validation Set', self.y_val)
-	output += formatter('Training Set', self.y_train)
-	output += formatter('Test Set',     self.y_test)
+	    output += formatter('Validation Set', self.valSet.getYvalues())
+	output += formatter('Training Set', self.trainSet.getYvalues())
+	output += formatter('Test Set',     self.testSet.getYvalues())
 	output += "TestSplit: %4.2f\n" % self.testSplit
 	return output
 
@@ -568,17 +563,31 @@ class DocumentSet (object):
     IS:     a set of documents along with their y_values and sampleNames
     HAS:    parallel lists: documents, y_values, sampleNames along with
 	      information about where the docs were loaded from
-    DOES:   Load from a file or directory structure using sklearn load_files(),
+    DOES:   Load from a file OR from directory structure using sklearn load_files(),
+	    If loading from a file, a document may have additional extraInfoFields
+		beyond ID, classification (y_values), and document text.
 	    Split into two doc sets, 
 	    Convert y_values to and from lists and np.array
-    FIXME: maybe this should live in sampleDataLib.py ??
-	    (it should not live in sklearnHelperLib since it requires import
-	    of sampleDataLib)
+    Pondered defining a Document class and having DocumentSet be a container of
+	Document objects.
+	Decided instead to have DocumentSet maintain parallel lists (doc strings,
+	sampleNames, y_values,etc.) since these lists are what are required by the
+	sklearn methods and many of the report methods defined below.
+
+	DocumentSet DOES use SampleSet defined in sampleDataLib.py that is a
+	collection of Sample objects.
+
+	So you can think of DocumentSet as the bridge between individual samples
+	and the parallel lists needed by sklearn
     """
     def __init__(self,
+				# if specified, these must be parallel lists:
 		docs=[],	# list of document (strings)
 		y=[],		# list of ints 0,1 or np.array w/ 0,1
 		sampleNames=[],	# list of names, (strings)
+		extraInfoFieldNames=[],	# names of extra info fields for a doc
+		extraInfo=None,		# list of [ doc info fields (strings) ]
+					# or None if no extra fields
 	):
 	"""
 	Assumes: y is as above.
@@ -588,18 +597,30 @@ class DocumentSet (object):
 
 	self.docs        = docs
 	self.sampleNames = sampleNames
+	self.extraInfoFieldNames = extraInfoFieldNames
+	self.extraInfo   = extraInfo
+	self.predictions = None
 	self.pathName    = None		# where loaded from
 	self.splitSize   = None		# if we do split, fraction to new set
 	self.randomSeed  = None		# if we do split, use for random subset
 
     # ---------------------------
+    def getNumDocs(self):	return len(self.docs)
     def getDocs(self):		return self.docs
     def getSampleNames(self):	return self.sampleNames
+    def getYvalues(self):	return self.y		# as np.array
+    def getYvaluesAsList(self):	return self.y.tolist()	# as list
+
+    def getExtraInfo(self):	return self.extraInfo
+    def getExtraInfoFieldNames(self): return self.extraInfoFieldNames
+
+    def getPredictions(self):	return self.predictions
+    def setPredictions(self, preds):	# list of ints 0,1.  Parallel to self.docs
+	self.predictions = preds
+
     def getPathName(self):	return self.pathName
     def getSplitSize(self):	return self.splitSize
     def getRandomSeed(self):	return self.randomSeed
-    def getYvalues(self):	return self.y		# as np.array
-    def getYvaluesAsList(self):	return self.y.tolist()	# as list
     # ---------------------------
 
     def split(self,
@@ -618,16 +639,34 @@ class DocumentSet (object):
 	self.splitSize  = splitSize
 	self.randomSeed = randomSeed
 
-	self.sampleNames, sampleNames_new,	\
-	self.docs,        docs_new,		\
-	self.y,           y_new = train_test_split( \
-					    self.sampleNames,
-					    self.docs,
-					    self.y,
-					    test_size=self.splitSize,
-					    random_state=self.randomSeed)
+	# JIM: this doesn't handle self.predictions. Kind assuming any split
+	#   would take place before the docSet is predicted.
+	if self.extraInfo != None:		# include extraInfo in the split
+	    self.sampleNames, sampleNames_new,	\
+	    self.docs,        docs_new,		\
+	    self.y,           y_new, 		\
+	    self.extraInfo,   extraInfo_new = train_test_split( \
+						self.sampleNames,
+						self.docs,
+						self.y,
+						self.extraInfo,
+						test_size=self.splitSize,
+						random_state=self.randomSeed)
+	else:
+	    self.sampleNames, sampleNames_new,	\
+	    self.docs,        docs_new,		\
+	    self.y,           y_new 		= train_test_split( \
+						self.sampleNames,
+						self.docs,
+						self.y,
+						test_size=self.splitSize,
+						random_state=self.randomSeed)
+	    extraInfo_new = None
 
-	return DocumentSet(docs=docs_new, y=y_new, sampleNames=sampleNames_new)
+	new = DocumentSet(docs=docs_new, y=y_new, sampleNames=sampleNames_new,
+				    extraInfoFieldNames=self.extraInfoFieldNames,
+				    extraInfo=extraInfo_new)
+	return new
     # ---------------------------
 
     def load(self, path):
@@ -637,7 +676,7 @@ class DocumentSet (object):
 	    Directory name, in which case we assume there are subdirectories
 		to be loaded by sklearn load_files()
 	    Filename, in which case we assume it is a file of records that
-		can be loaded by sampleDataLib.SampleRecord().
+		can be loaded by sampleDataLib.SampleSet().
 	Return self
 	"""
 	self.path = os.path.realpath(path)
@@ -650,11 +689,15 @@ class DocumentSet (object):
     # ---------------------------
 
     def loadFromDir(self, path):
-
+	"""
+	Load from a directory using sklearn load_files()
+	"""
 	dataSet          = load_files( path )
 	self.docs        = dataSet.data
 	self.y           = dataSet.target
 	self.sampleNames = self.fileNamesToSampleNames(dataSet.filenames)
+	self.extraInfoFieldNames   = []
+	self.extraInfo   = None
 
 	return self
     # ---------------------------
@@ -670,78 +713,140 @@ class DocumentSet (object):
     # ---------------------------
 
     def loadFromFile(self, path):
-	self.docs = []
-	self.y = []
+	self.docs        = []
+	self.y           = []
 	self.sampleNames = []
 
-        rcds = open(path,'r').read().split(sampleDataLib.RECORDSEP)
+	srSet = sampleDataLib.ClassifiedSampleSet(path)
 
-	del rcds[0]		# header line
-        del rcds[-1] 		# empty string after end of split
+	self.extraInfoFieldNames = srSet.getExtraInfoFieldNames()
 
-	for rcd in rcds:
-	    sr = sampleDataLib.SampleRecord(rcd)
+	if len(self.extraInfoFieldNames) > 0: self.extraInfo = []
+	else: self.extraInfo = None
+
+	for sr in srSet.getSamples():
 	    self.docs.append(sr.getDocument())
 	    self.y.append(sr.getKnownYvalue())
 	    self.sampleNames.append(sr.getSampleName())
+	    if self.extraInfo != None:   self.extraInfo.append(sr.getExtraInfo())
 
 	self.y = np.array(self.y)
+
 	return self
 # end class DocumentSet ---------------------------
+
+class PredictionFormatter (object):
+    """
+    IS  an object that knows how to format predictions from a DocumentSet to write
+	    to a prediction output file
+    HAS  docSet, pipeline, fields to include in prediction output file
+    DOES iterator to return formated predictions
+    """
+    baseFields = [		# field/column names in prediction output
+		{'fn' : 'ID'         , 'format':'%s'},	# field name, print format
+		{'fn' : 'True Class' , 'format':'%s'},
+		{'fn' : 'Pred Class' , 'format':'%s'},
+		{'fn' : 'FP/FN'      , 'format':'%s'},
+	    ]
+    confFields = [		# fields associated w/ (optional) confidence values
+		{'fn' : 'Confidence' , 'format':'%5.3f'},
+		{'fn' : 'Abs Value'  , 'format':'%5.3f'},
+	    ]
+    # ---------------------------
+
+    def __init__(self,
+		docSet,			# DocumentSet that has predictions
+		pipeline,		# the pipeline that made the predictions
+		classNames=['no','yes'], # class labels
+		positiveClass=1,	# index in classNames considered the
+					#   positive class
+		):
+	"""
+	Assumes docSet already has predictions from docSet.setPredictions().
+
+	Build parallel lists, one item for each doc in docSet:
+	self.trueNames[]	- "keep"/"discard"
+	self.predNames[]	- same
+	self.predTypes[]	- "TP", "FP", ...
+	self.confidences[]	- or None if this pipeline doesn't support conf
+	self.absConf[]		- or None if this pipeline doesn't support conf
+	sampleNames[]
+	extraInfo[]		- each item is a list of extra values
+				-  (strings) to output for the doc
+	"""
+	self.docSet = docSet
+
+	y_true      = docSet.getYvalues()
+	y_predicted = docSet.getPredictions()
+
+	# map predictions 0/1 to text names
+	self.trueNames = [ classNames[y] for y in y_true ]
+	self.predNames = [ classNames[y] for y in y_predicted ]
+
+	# set predicton type "FP", "FN", "TP", "TN
+	self.predTypes = [skHelper.predictionType(t, p,
+				    positiveClass=positiveClass) \
+					for t,p in zip(y_true,y_predicted)]
+
+	# get fields and formats to output
+	if self.determineConfidenceValues(docSet, pipeline):
+	    fields = type(self).baseFields + type(self).confFields
+	else:
+	    fields = type(self).baseFields
+
+	self.fieldNames = [ f['fn']     for f in fields ]
+	self.formats    = [ f['format'] for f in fields ]
+
+	# add any extraInfoFields the documents might have
+	self.fieldNames += docSet.getExtraInfoFieldNames()
+	self.formats += [ '%s' for i in range(len(docSet.getExtraInfoFieldNames()))]
+    # ---------------------------
+
+    def determineConfidenceValues(self, docSet, pipeline):
+	"""
+	Determine if the pipeline has confidence values to report.
+	If so, save them and return True.
+	"""
+	if pipeline and hasattr(pipeline,"decision_function"):
+	    self.confidences = pipeline.decision_function(docSet.getDocs()).tolist()
+	    self.absConf     = map(abs, self.confidences)
+	    return True
+	else:
+	    self.confidences = None
+	    self.absConf     = None
+	    return False
+    # ---------------------------
+
+    def getHeaderText(self):	return '\t'.join(self.fieldNames) + '\n'
+
+    def getNextPredictionText(self,):
+	"""
+	iterator over the predictions
+	"""
+	formatString = '\t'.join(self.formats) + '\n'
+	sampleNames  = self.docSet.getSampleNames()
+	extraInfo    = self.docSet.getExtraInfo()
+
+	for i in range(len(sampleNames)):
+	    pred = (sampleNames[i],
+		    self.trueNames[i],
+		    self.predNames[i],
+		    self.predTypes[i],
+		    )
+	    if self.confidences:
+		pred += (self.confidences[i], self.absConf[i])
+
+	    if extraInfo:
+		pred += extraInfo[i]
+
+	    yield formatString % pred
+# end class PredictionFormatter ---------------------------
 
 ############################################################
 # Functions to format output reports and other things.
 # These are functions that concievably could be useful outside on their own.
 # SO these do not use args or config variables defined above.
 ############################################################
-def writePredictionFile( \
-    outputFile,		# file name (string) or file object (e.g., stdout)
-    pipeline,		# trained pipeline (vectorizer+classifier) for predict
-    docs,		# [strings] set of (predicted) docs to write predictions
-    sampleNames,	# [strings] sample names for the predicted docs
-    y_true,		# [ 0|1 ] true classifications for the docs
-    y_predicted,	# [ 0|1 ] predicted classifications for the docs
-    classNames=['no','yes'], # class labels
-    positiveClass=1,	# index in classNames considered the positive class
-    ):
-    '''
-    Write a prediction file, with confidence values if available.
-    Prediction file has a line for each doc,
-	samplename, y_true, y_predicted, FP/FN, [confidence, abs value]
-    '''
-    predTypes = [skHelper.predictionType(t, p, positiveClass=positiveClass) \
-					    for t,p in zip(y_true,y_predicted)]
-    
-    trueNames = [ classNames[y] for y in y_true ]
-    predNames = [ classNames[y] for y in y_predicted ]
-    
-    if hasattr(pipeline, "decision_function"):	# include confidences
-	confidences = pipeline.decision_function(docs).tolist()
-	absConf = map(abs, confidences)
-	predictions = \
-	 zip(sampleNames, trueNames, predNames, predTypes, confidences, absConf)
-
-	# sort by absolute value of confidence
-	selConf = lambda x: x[5]	# select confidence value 
-	predictions = sorted(predictions, key=selConf, reverse=True)
-
-	header = "ID\tTrue Class\tPred Class\tFP/FN\tConfidence\tAbs Value\n"
-	template = "%s\t%s\t%s\t%s\t%5.3f\t%5.3f\n"
-    else:			# no confidence values available
-	predictions = zip(sampleNames, trueNames, predNames, predTypes)
-
-	header = "ID\tTrue Class\tPred Class\FP/FN\n"
-	template = "%s\t%s\t%s\t%s\n"
-
-    if type(outputFile) == type(''): fp = open(outputFile, 'w')
-    else: fp = outputFile
-
-    fp.write(header)
-    for p in predictions:
-	fp.write(template % p)
-
-    return
-# ---------------------------
 
 def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
 		    classifier,	# fitted classifier from the pipeline
@@ -984,24 +1089,45 @@ def getRandomSeedReport( seedDict ):
 # ---------------------------
 
 if __name__ == "__main__":   ############### ad hoc test code ##############3
-    if True:	# DocumentSet testing
+    if True:	# DocumentSet  and Prediction Formatter testing
 	print "docs 1"
 	d = DocumentSet()
 
-	d.load('Data/smallset/figureText.txt')
+	d.load('Data/smallset/testSetFig.txt')
+	d.setPredictions([0 for i in range(100)])
 	print len(d.getDocs())
 	print d.getSampleNames()[:5]
 	print d.getYvalues()[:5]
 	print d.getYvaluesAsList()[:5]
 
+	formatter = PredictionFormatter(d, None)
+	sys.stdout.write(formatter.getHeaderText())
+	for line in formatter.getNextPredictionText():
+	    sys.stdout.write(line)
+
+    if True:	# split testing
 	d2 = d.split(splitSize=0.2)
 	print "docs 1 after split"
 	print len(d.getDocs())
 	print d.getSampleNames()[:5]
+
+	d.setPredictions([0 for i in range(d.getNumDocs())])
+	formatter = PredictionFormatter(d, None)
+	sys.stdout.write(formatter.getHeaderText())
+	for line in formatter.getNextPredictionText():
+	    sys.stdout.write(line)
+
 	print "docs 2"
 	print len(d2.getDocs())
 	print d2.getSampleNames()[:5]
 
+	d2.setPredictions([0 for i in range(d2.getNumDocs())])
+	formatter = PredictionFormatter(d2, None)
+	sys.stdout.write(formatter.getHeaderText())
+	for line in formatter.getNextPredictionText():
+	    sys.stdout.write(line)
+
+    if True:	# load from directory testing
 	print "docs 3"
 	d3 = DocumentSet()
 	print d3.load('Data/smallset').getSampleNames()[:5]
