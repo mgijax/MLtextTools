@@ -488,7 +488,7 @@ class TextPipelineTuningHelper (object):
 	y_true = self.testSet.getYvalues()
 	y_predicted = self.testSet.getPredictions()
 
-	if len(sys.argv) > 0: tuningFile = sys.argv[0]
+	if sys.argv: tuningFile = sys.argv[0]
 	else: tuningFile = ''
 
 	with open(tuningIndexFile, 'a') as fp:
@@ -574,8 +574,8 @@ class DocumentSet (object):
 	sampleNames, y_values,etc.) since these lists are what are required by the
 	sklearn methods and many of the report methods defined below.
 
-	DocumentSet DOES use SampleSet defined in sampleDataLib.py that is a
-	collection of Sample objects.
+	DocumentSet DOES use ClassifiedSampleSet defined in sampleDataLib.py
+	that is a collection of Sample objects.
 
 	So you can think of DocumentSet as the bridge between individual samples
 	and the parallel lists needed by sklearn
@@ -676,7 +676,7 @@ class DocumentSet (object):
 	    Directory name, in which case we assume there are subdirectories
 		to be loaded by sklearn load_files()
 	    Filename, in which case we assume it is a file of records that
-		can be loaded by sampleDataLib.SampleSet().
+		can be loaded by sampleDataLib.ClassifiedSampleSet().
 	Return self
 	"""
 	self.path = os.path.realpath(path)
@@ -717,11 +717,11 @@ class DocumentSet (object):
 	self.y           = []
 	self.sampleNames = []
 
-	srSet = sampleDataLib.ClassifiedSampleSet(path)
+	srSet = sampleDataLib.ClassifiedSampleSet().read(path)
 
 	self.extraInfoFieldNames = srSet.getExtraInfoFieldNames()
 
-	if len(self.extraInfoFieldNames) > 0: self.extraInfo = []
+	if self.extraInfoFieldNames: self.extraInfo = []
 	else: self.extraInfo = None
 
 	for sr in srSet.getSamples():
@@ -1027,7 +1027,7 @@ def getTopFeaturesReport(  \
     (negative) coefficients.
     Assumes num < len(orderedFeatures).
     '''
-    if len(orderedFeatures) == 0:		# no coefs
+    if not orderedFeatures:		# no coefs
 	output =  SSTART + "Top positive features - not available\n"
 	output += SSTART + "Top negative features - not available\n"
 	output += "\n"
