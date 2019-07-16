@@ -724,7 +724,7 @@ class DocumentSet (object):
 	if self.extraInfoFieldNames: self.extraInfo = []
 	else: self.extraInfo = None
 
-	for sr in srSet.getSamples():
+	for sr in srSet.sampleIterator():
 	    self.docs.append(sr.getDocument())
 	    self.y.append(sr.getKnownYvalue())
 	    self.sampleNames.append(sr.getSampleName())
