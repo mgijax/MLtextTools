@@ -828,18 +828,18 @@ class PredictionFormatter (object):
 	extraInfo    = self.docSet.getExtraInfo()
 
 	for i in range(len(sampleNames)):
-	    pred = (sampleNames[i],
+	    pred = [sampleNames[i],
 		    self.trueNames[i],
 		    self.predNames[i],
 		    self.predTypes[i],
-		    )
+		    ]
 	    if self.confidences:
-		pred += (self.confidences[i], self.absConf[i])
+		pred += [self.confidences[i], self.absConf[i]]
 
 	    if extraInfo:
 		pred += extraInfo[i]
 
-	    yield formatString % pred
+	    yield formatString % tuple(pred)
 # end class PredictionFormatter ---------------------------
 
 ############################################################
