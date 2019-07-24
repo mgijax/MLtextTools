@@ -742,13 +742,11 @@ class PredictionFormatter (object):
     HAS  docSet, pipeline, fields to include in prediction output file
     DOES iterator to return formated predictions
     """
-    baseFields = [		# field/column names in prediction output
+    outputFields = [		# field/column names in prediction output
 		{'fn' : 'ID'         , 'format':'%s'},	# field name, print format
 		{'fn' : 'True Class' , 'format':'%s'},
 		{'fn' : 'Pred Class' , 'format':'%s'},
 		{'fn' : 'FP/FN'      , 'format':'%s'},
-	    ]
-    confFields = [		# fields associated w/ (optional) confidence values
 		{'fn' : 'Confidence' , 'format':'%5.3f'},
 		{'fn' : 'Abs Value'  , 'format':'%5.3f'},
 	    ]
@@ -768,8 +766,8 @@ class PredictionFormatter (object):
 	self.trueNames[]	- "keep"/"discard"
 	self.predNames[]	- same
 	self.predTypes[]	- "TP", "FP", ...
-	self.confidences[]	- or None if this pipeline doesn't support conf
-	self.absConf[]		- or None if this pipeline doesn't support conf
+	self.confidences[]	- 0's if pipeline doesn't support confidences
+	self.absConf[]		- 0's if pipeline doesn't support confidences
 	sampleNames[]
 	extraInfo[]		- each item is a list of extra values
 				-  (strings) to output for the doc
@@ -778,6 +776,8 @@ class PredictionFormatter (object):
 
 	y_true      = docSet.getYvalues()
 	y_predicted = docSet.getPredictions()
+
+	self.setConfidenceValues(docSet, pipeline)
 
 	# map predictions 0/1 to text names
 	self.trueNames = [ classNames[y] for y in y_true ]
@@ -788,33 +788,25 @@ class PredictionFormatter (object):
 				    positiveClass=positiveClass) \
 					for t,p in zip(y_true,y_predicted)]
 
-	# get fields and formats to output
-	if self.determineConfidenceValues(docSet, pipeline):
-	    fields = type(self).baseFields + type(self).confFields
-	else:
-	    fields = type(self).baseFields
-
-	self.fieldNames = [ f['fn']     for f in fields ]
-	self.formats    = [ f['format'] for f in fields ]
+	# get fieldnames and formats to output
+	self.fieldNames = [ f['fn']     for f in self.outputFields ]
+	self.formats    = [ f['format'] for f in self.outputFields ]
 
 	# add any extraInfoFields the documents might have
 	self.fieldNames += docSet.getExtraInfoFieldNames()
 	self.formats += [ '%s' for i in range(len(docSet.getExtraInfoFieldNames()))]
     # ---------------------------
 
-    def determineConfidenceValues(self, docSet, pipeline):
+    def setConfidenceValues(self, docSet, pipeline):
 	"""
-	Determine if the pipeline has confidence values to report.
-	If so, save them and return True.
+	Compute confidence values (and abs value)
 	"""
 	if pipeline and hasattr(pipeline,"decision_function"):
 	    self.confidences = pipeline.decision_function(docSet.getDocs()).tolist()
 	    self.absConf     = map(abs, self.confidences)
-	    return True
 	else:
-	    self.confidences = None
-	    self.absConf     = None
-	    return False
+	    self.confidences = [ 0.0 for x in range(docSet.getNumDocs()) ]
+	    self.absConf     = [ 0.0 for x in range(docSet.getNumDocs()) ]
     # ---------------------------
 
     def getHeaderText(self):	return '\t'.join(self.fieldNames) + '\n'
@@ -832,10 +824,9 @@ class PredictionFormatter (object):
 		    self.trueNames[i],
 		    self.predNames[i],
 		    self.predTypes[i],
+		    self.confidences[i],
+		    self.absConf[i]
 		    ]
-	    if self.confidences:
-		pred += [self.confidences[i], self.absConf[i]]
-
 	    if extraInfo:
 		pred += extraInfo[i]
 
