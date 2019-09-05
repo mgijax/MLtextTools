@@ -75,9 +75,8 @@ import string
 import os
 import os.path
 import argparse
-import ConfigParser
 
-import sklearnHelperLib as skHelper
+import sklearnHelperLib as skhelper
 
 import numpy as np
 from sklearn.datasets import load_files
@@ -104,16 +103,11 @@ def parseCmdLine():
 	for cmd line args, they are the 'dest' argument in add_argument()
 	for non-cmd line args, they keys are set directly.
     """
-    cp = ConfigParser.ConfigParser()
-    cp.optionxform = str # make keys case sensitive
-
-    # generate a path up multiple parent directories to search for config file
-    cl = ['/'.join(l)+'/config.cfg' for l in [['.']]+[['..']*i for i in range(1,6)]]
-    cp.read(cl)
+    config = skhelper.getConfig()
 
     # config file params that are defaults for command line options
-    TRAINING_DATA     = cp.get("DEFAULT", "TRAINING_DATA")
-    TUNING_INDEX_FILE = cp.get("MODEL_TUNING", "TUNING_INDEX_FILE")
+    TRAINING_DATA     = config.get("DEFAULT", "TRAINING_DATA")
+    TUNING_INDEX_FILE = config.get("MODEL_TUNING", "TUNING_INDEX_FILE")
 
     basename = os.path.basename(sys.argv[0])
     OUTPUT_FILE_PREFIX = os.path.splitext(basename)[0]
@@ -177,15 +171,15 @@ def parseCmdLine():
     args =  parser.parse_args()
 
     # config params that are not cmdline args (yet)
-    args.gridSearchBeta  = cp.getint  ("MODEL_TUNING", "GRIDSEARCH_BETA")
-    args.compareBeta     = cp.getint  ("MODEL_TUNING", "COMPARE_BETA")
-    args.testSplit       = cp.getfloat("MODEL_TUNING", "TEST_SPLIT")
-    args.numCV           = cp.getint  ("MODEL_TUNING", "NUM_CV")
-    args.yClassNames     = eval(cp.get("CLASS_NAMES",  "y_class_names"))
-    args.yClassToScore   = cp.getint  ("CLASS_NAMES",  "y_class_to_score")
-    args.rptClassNames   = eval(cp.get("CLASS_NAMES",  "rpt_class_names"))
-    args.rptClassMapping = eval(cp.get("CLASS_NAMES",  "rpt_class_mapping"))
-    args.rptNum      = cp.getint("CLASS_NAMES", "rpt_classification_report_num")
+    args.gridSearchBeta  = config.getint  ("MODEL_TUNING", "GRIDSEARCH_BETA")
+    args.compareBeta     = config.getint  ("MODEL_TUNING", "COMPARE_BETA")
+    args.testSplit       = config.getfloat("MODEL_TUNING", "TEST_SPLIT")
+    args.numCV           = config.getint  ("MODEL_TUNING", "NUM_CV")
+    args.yClassNames     = eval(config.get("CLASS_NAMES",  "y_class_names"))
+    args.yClassToScore   = config.getint  ("CLASS_NAMES",  "y_class_to_score")
+    args.rptClassNames   = eval(config.get("CLASS_NAMES",  "rpt_class_names"))
+    args.rptClassMapping = eval(config.get("CLASS_NAMES",  "rpt_class_mapping"))
+    args.rptNum     = config.getint("CLASS_NAMES", "rpt_classification_report_num")
 
     return args
 # ---------------------------
