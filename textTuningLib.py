@@ -55,12 +55,13 @@ Outputs:
 * log of the tuning run to stdout. This has lots of subsections like
     test metrics
     best pipeline parameters
-    top positive/negative weighted features (If the 'classifier' supports getting
+    top pos/neg weighted features (If the 'classifier' supports getting
 				    weighted coefficients)
     vectorizer report
     false positives/negatives
     sample set size report
-* (optional) write a test metrics summary line to an index file (usually index.out)
+* (optional) write a test metrics summary line to an index file
+	(usually index.out)
 * (optional) write features + their weights to a feature file
 * (optional) write test and training set prediction files
 
@@ -76,7 +77,8 @@ import os
 import os.path
 import argparse
 
-import sklearnHelperLib as skhelper
+import utilsLib
+import sklearnHelperLib as skHelper
 
 import numpy as np
 from sklearn.datasets import load_files
@@ -86,7 +88,7 @@ from sklearn.metrics import make_scorer, fbeta_score, precision_score,\
 			recall_score, classification_report, confusion_matrix
 
 # extend path up multiple parent dirs, hoping we can import sampleDataLib
-sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,4)]] + \
+sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] + \
 		sys.path
 import sampleDataLib
 
@@ -103,7 +105,7 @@ def parseCmdLine():
 	for cmd line args, they are the 'dest' argument in add_argument()
 	for non-cmd line args, they keys are set directly.
     """
-    config = skhelper.getConfig()
+    config = utilsLib.getConfig()
 
     # config file params that are defaults for command line options
     TRAINING_DATA     = config.get("DEFAULT", "TRAINING_DATA")
@@ -171,15 +173,16 @@ def parseCmdLine():
     args =  parser.parse_args()
 
     # config params that are not cmdline args (yet)
+    args.SAMPLE_OBJ_TYPE_NAME = config.get("CLASS_NAMES","SAMPLE_OBJ_TYPE_NAME")
     args.gridSearchBeta  = config.getint  ("MODEL_TUNING", "GRIDSEARCH_BETA")
     args.compareBeta     = config.getint  ("MODEL_TUNING", "COMPARE_BETA")
     args.testSplit       = config.getfloat("MODEL_TUNING", "TEST_SPLIT")
     args.numCV           = config.getint  ("MODEL_TUNING", "NUM_CV")
-    args.yClassNames     = eval(config.get("CLASS_NAMES",  "y_class_names"))
+    #args.yClassNames     = eval(config.get("CLASS_NAMES",  "y_class_names"))
     args.yClassToScore   = config.getint  ("CLASS_NAMES",  "y_class_to_score")
     args.rptClassNames   = eval(config.get("CLASS_NAMES",  "rpt_class_names"))
     args.rptClassMapping = eval(config.get("CLASS_NAMES",  "rpt_class_mapping"))
-    args.rptNum     = config.getint("CLASS_NAMES", "rpt_classification_report_num")
+    args.rptNum   = config.getint("CLASS_NAMES","rpt_classification_report_num")
 
     return args
 # ---------------------------
@@ -220,7 +223,8 @@ class TextPipelineTuningHelper (object):
 	self.verbose            = args.verbose
 	self.gsVerbose          = args.gsVerbose
 
-	self.yClassNames        = args.yClassNames
+	self.sampleObjType   = getattr(sampleDataLib, args.SAMPLE_OBJ_TYPE_NAME)
+	self.yClassNames        = self.sampleObjType.getSampleClassNames()
 	self.yClassToScore      = args.yClassToScore
 	self.rptClassNames      = args.rptClassNames
 	self.rptClassMapping    = args.rptClassMapping
@@ -404,31 +408,32 @@ class TextPipelineTuningHelper (object):
 					 featureFile, values=self.featureValues)
 	output = self.getReportStart()
 
-	output += getFormattedMetrics("Training Set", self.trainSet.getYvalues(),
-				    self.trainSet.getPredictions(),self.compareBeta,
-				    rptClassNames=self.rptClassNames,
-				    rptClassMapping=self.rptClassMapping,
-				    rptNum=self.rptNum,
-				    yClassNames=self.yClassNames,
-				    yClassToScore=self.yClassToScore,
-				    )
+	output += getFormattedMetrics("Training Set",self.trainSet.getYvalues(),
+				self.trainSet.getPredictions(),self.compareBeta,
+				rptClassNames=self.rptClassNames,
+				rptClassMapping=self.rptClassMapping,
+				rptNum=self.rptNum,
+				yClassNames=self.yClassNames,
+				yClassToScore=self.yClassToScore,
+				)
 	if self.haveValSet:
-	    output += getFormattedMetrics("Validation Set",self.valSet.getYvalues(),
-				    self.valSet.getPredictions(),self.compareBeta,
-				    rptClassNames=self.rptClassNames,
-				    rptClassMapping=self.rptClassMapping,
-				    rptNum=self.rptNum,
-				    yClassNames=self.yClassNames,
-				    yClassToScore=self.yClassToScore,
-				    )
+	    output += getFormattedMetrics("Validation Set",
+				self.valSet.getYvalues(),
+				self.valSet.getPredictions(),self.compareBeta,
+				rptClassNames=self.rptClassNames,
+				rptClassMapping=self.rptClassMapping,
+				rptNum=self.rptNum,
+				yClassNames=self.yClassNames,
+				yClassToScore=self.yClassToScore,
+				)
 	output += getFormattedMetrics("Test Set", self.testSet.getYvalues(),
-				    self.testSet.getPredictions(),self.compareBeta,
-				    rptClassNames=self.rptClassNames,
-				    rptClassMapping=self.rptClassMapping,
-				    rptNum=self.rptNum,
-				    yClassNames=self.yClassNames,
-				    yClassToScore=self.yClassToScore,
-				    )
+				self.testSet.getPredictions(),self.compareBeta,
+				rptClassNames=self.rptClassNames,
+				rptClassMapping=self.rptClassMapping,
+				rptNum=self.rptNum,
+				yClassNames=self.yClassNames,
+				yClassToScore=self.yClassToScore,
+				)
 	output += getBestParamsReport(self.gs, self.pipelineParameters)
 	output += getGridSearchReport(self.gs, self.pipelineParameters)
 
@@ -442,7 +447,8 @@ class TextPipelineTuningHelper (object):
 
 	    # false positives/negatives report.
 	    # JIM: Should this be for validation set or test or both?
-	    falsePos,falseNeg = skHelper.getFalsePosNeg( self.testSet.getYvalues(),
+	    falsePos,falseNeg = skHelper.getFalsePosNeg( \
+					self.testSet.getYvalues(),
 					self.testSet.getPredictions(),
 					self.testSet.getSampleNames(),
 					positiveClass=self.yClassToScore)
@@ -501,10 +507,10 @@ class TextPipelineTuningHelper (object):
 
     def writePredictions(self,):
 	self.writePredictionsFile( self.outputFilePrefix + "_train_pred.txt",
-								    self.trainSet)
+								self.trainSet)
 
 	self.writePredictionsFile( self.outputFilePrefix + "_test_pred.txt",
-								    self.testSet)
+								self.testSet)
     # ---------------------------
 
     def writePredictionsFile(self, outputFile, documentSet):
@@ -513,7 +519,7 @@ class TextPipelineTuningHelper (object):
 	else: fp = outputFile
 
 	formatter = PredictionFormatter(documentSet, self.bestEstimator,
-		    classNames=self.yClassNames, positiveClass=self.yClassToScore)
+		classNames=self.yClassNames, positiveClass=self.yClassToScore)
 
 	fp.write(formatter.getHeaderText())
 	for line in formatter.getNextPredictionText():
@@ -557,16 +563,19 @@ class DocumentSet (object):
     IS:     a set of documents along with their y_values and sampleNames
     HAS:    parallel lists: documents, y_values, sampleNames along with
 	      information about where the docs were loaded from
-    DOES:   Load from a file OR from directory structure using sklearn load_files(),
-	    If loading from a file, a document may have additional extraInfoFields
-		beyond ID, classification (y_values), and document text.
+    DOES:   Load from a file OR from directory structure using sklearn
+		load_files(),
+	    If loading from a file, a document may have additional
+		extraInfoFields beyond ID, classification (y_values),
+		and document text.
 	    Split into two doc sets, 
 	    Convert y_values to and from lists and np.array
     Pondered defining a Document class and having DocumentSet be a container of
 	Document objects.
-	Decided instead to have DocumentSet maintain parallel lists (doc strings,
-	sampleNames, y_values,etc.) since these lists are what are required by the
-	sklearn methods and many of the report methods defined below.
+	Decided instead to have DocumentSet maintain parallel lists (doc
+	    strings, sampleNames, y_values,etc.) since these lists are what
+	    are required by the sklearn methods and many of the report
+	    methods defined below.
 
 	DocumentSet DOES use ClassifiedSampleSet defined in sampleDataLib.py
 	that is a collection of Sample objects.
@@ -609,7 +618,7 @@ class DocumentSet (object):
     def getExtraInfoFieldNames(self): return self.extraInfoFieldNames
 
     def getPredictions(self):	return self.predictions
-    def setPredictions(self, preds):	# list of ints 0,1.  Parallel to self.docs
+    def setPredictions(self, preds):  # list of ints 0,1. Parallel to self.docs
 	self.predictions = preds
 
     def getPathName(self):	return self.pathName
@@ -658,8 +667,8 @@ class DocumentSet (object):
 	    extraInfo_new = None
 
 	new = DocumentSet(docs=docs_new, y=y_new, sampleNames=sampleNames_new,
-				    extraInfoFieldNames=self.extraInfoFieldNames,
-				    extraInfo=extraInfo_new)
+				extraInfoFieldNames=self.extraInfoFieldNames,
+				extraInfo=extraInfo_new)
 	return new
     # ---------------------------
 
@@ -722,7 +731,7 @@ class DocumentSet (object):
 	    self.docs.append(sr.getDocument())
 	    self.y.append(sr.getKnownYvalue())
 	    self.sampleNames.append(sr.getSampleName())
-	    if self.extraInfo != None:   self.extraInfo.append(sr.getExtraInfo())
+	    if self.extraInfo != None:  self.extraInfo.append(sr.getExtraInfo())
 
 	self.y = np.array(self.y)
 
@@ -731,13 +740,13 @@ class DocumentSet (object):
 
 class PredictionFormatter (object):
     """
-    IS  an object that knows how to format predictions from a DocumentSet to write
-	    to a prediction output file
+    IS  an object that knows how to format predictions from a DocumentSet to
+	write to a prediction output file
     HAS  docSet, pipeline, fields to include in prediction output file
     DOES iterator to return formated predictions
     """
-    outputFields = [		# field/column names in prediction output
-		{'fn' : 'ID'         , 'format':'%s'},	# field name, print format
+    outputFields = [		# field/column names & fmt in prediction output
+		{'fn' : 'ID'         , 'format':'%s'},
 		{'fn' : 'True Class' , 'format':'%s'},
 		{'fn' : 'Pred Class' , 'format':'%s'},
 		{'fn' : 'FP/FN'      , 'format':'%s'},
@@ -789,7 +798,8 @@ class PredictionFormatter (object):
 
 	# add any extraInfoFields the documents might have
 	self.fieldNames += docSet.getExtraInfoFieldNames()
-	self.formats += [ '%s' for i in range(len(docSet.getExtraInfoFieldNames()))]
+	self.formats += [ '%s' for i in \
+				    range(len(docSet.getExtraInfoFieldNames()))]
     # ---------------------------
 
     def setConfidenceValues(self, docSet, pipeline):
@@ -797,7 +807,8 @@ class PredictionFormatter (object):
 	Compute "confidence" values (and abs value)
 	"""
 	if pipeline and hasattr(pipeline,"decision_function"):
-	    self.confidences = pipeline.decision_function(docSet.getDocs()).tolist()
+	    self.confidences = \
+			pipeline.decision_function(docSet.getDocs()).tolist()
 	    self.absConf     = map(abs, self.confidences)
 	elif pipeline and hasattr(pipeline,"predict_proba"):
 	    self.setProbaConfidences(pipeline, docSet)
@@ -813,15 +824,15 @@ class PredictionFormatter (object):
 	Mimic how decision_function() works in classifiers w/ that method:
 	    Return "confidence" for the predicted class, but
 	    make this
-		positive if the predicted class is the self.positiveClass (index)
-		negative if the predicted class is not the positiveClass
+		pos if the predicted class is the self.positiveClass (index)
+		neg if the predicted class is not the positiveClass
 	See
 	https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.SGDClassifier.html#sklearn.linear_model.SGDClassifier.decision_function
 	https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html#sklearn.ensemble.RandomForestClassifier.predict_proba
 	https://datascience.stackexchange.com/questions/22762/understanding-predict-proba-from-multioutputclassifier
 
 	JIM: This works for RandomForestClassifier. 
-	Need to check this is consistent for other classifiers with predict_proba.
+	Need to check this is consistent for other classifiers w/ predict_proba.
 	"""
 	self.confidences = []
 	self.absConf     = []
@@ -974,7 +985,7 @@ def getFalsePosNegReport( \
 	output += "%s\n" % name
 
     output += "\n"
-    output += SSTART+"False negatives for %s: %d\n" % (title,len(falseNegatives))
+    output += SSTART+"False negatives for %s: %d\n" %(title,len(falseNegatives))
     for name in falseNegatives[:num]:
 	output += "%s\n" % name
 

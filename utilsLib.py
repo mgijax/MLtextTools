@@ -23,7 +23,8 @@ def getConfig(fileList=[]):
 
     # generate a path up multiple parent directories to search for config file
     # (up to 6 levels above)
-    cl = ['/'.join(l)+'/config.cfg' for l in [['.']]+[['..']*i for i in range(1,6)]]
+    cl = ['/'.join(l)+'/config.cfg' for l in [['.']]+[['..']*i \
+							for i in range(1,10)]]
     cl.reverse()    # Note: later files in the list override earlier files.
 
     cp.read(cl + fileList)
