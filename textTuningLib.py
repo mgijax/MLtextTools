@@ -75,6 +75,7 @@ import re
 import string
 import os
 import os.path
+import pickle
 import argparse
 
 import utilsLib
@@ -169,6 +170,8 @@ def parseCmdLine():
     parser.add_argument('--features', dest='writeFeatures',
 			action='store_true', default=False,
 			help="write feature file" )
+    parser.add_argument('--savemodel', dest='modelFile', default=None,
+	    help='pickle/save trained model in this file. Default: no save')
 
     args =  parser.parse_args()
 
@@ -178,7 +181,6 @@ def parseCmdLine():
     args.compareBeta     = config.getint  ("MODEL_TUNING", "COMPARE_BETA")
     args.testSplit       = config.getfloat("MODEL_TUNING", "TEST_SPLIT")
     args.numCV           = config.getint  ("MODEL_TUNING", "NUM_CV")
-    #args.yClassNames     = eval(config.get("CLASS_NAMES",  "y_class_names"))
     args.yClassToScore   = config.getint  ("CLASS_NAMES",  "y_class_to_score")
     args.rptClassNames   = eval(config.get("CLASS_NAMES",  "rpt_class_names"))
     args.rptClassMapping = eval(config.get("CLASS_NAMES",  "rpt_class_mapping"))
@@ -219,6 +221,7 @@ class TextPipelineTuningHelper (object):
 	self.wPredictions       = args.wPredictions
 	self.outputFilePrefix   = args.outputFilePrefix
 	self.writeFeatures      = args.writeFeatures
+	self.modelFile		= args.modelFile
 	self.compareBeta        = args.compareBeta
 	self.verbose            = args.verbose
 	self.gsVerbose          = args.gsVerbose
@@ -402,6 +405,8 @@ class TextPipelineTuningHelper (object):
 	    self.writeIndexFile(self.tuningIndexFile, self.compareBeta)
 	if self.wPredictions:
 	    self.writePredictions()
+	if self.modelFile:
+	    self.writeModel()
 	if self.writeFeatures:
 	    featureFile = self.outputFilePrefix + "_features.txt"
 	    writeFeatures(self.bestVectorizer, self.bestClassifier,
@@ -524,6 +529,12 @@ class TextPipelineTuningHelper (object):
 	fp.write(formatter.getHeaderText())
 	for line in formatter.getNextPredictionText():
 	    fp.write(line)
+    # ---------------------------
+
+    def writeModel(self,):
+	fp = open(self.modelFile, 'wb')
+	pickle.dump(self.bestEstimator, fp)
+	fp.close()
     # ---------------------------
 
     def getSampleSummaryReport(self,):
@@ -1062,21 +1073,20 @@ def getTopFeaturesReport(  \
     Assumes num < len(orderedFeatures).
     '''
     if not orderedFeatures:		# no coefs
-	output =  SSTART + "Top positive features - not available\n"
-	output += SSTART + "Top negative features - not available\n"
+	output =  SSTART + "Feature weights: not available\n"
 	output += "\n"
 	return output
 
-    topPos = orderedFeatures[:num]
-    topNeg = orderedFeatures[len(orderedFeatures)-num:]
+    highest = orderedFeatures[:num]
+    lowest  = orderedFeatures[len(orderedFeatures)-num:]
 
-    output = SSTART + "Top positive features (%d)\n" % len(topPos)
-    for f,c in topPos:
+    output = SSTART + "Feature weights: highest %d\n" % len(highest)
+    for f,c in highest:
 	output += "%+5.4f\t%s\n" % (c,f)
     output += "\n"
 
-    output += SSTART + "Top negative features (%d)\n" % len(topNeg)
-    for f,c in topNeg:
+    output += SSTART + "Feature weights: lowest %d\n" % len(lowest)
+    for f,c in lowest:
 	output += "%+5.4f\t%s\n" % (c,f)
     output += "\n"
 

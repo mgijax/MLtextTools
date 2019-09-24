@@ -80,10 +80,13 @@ def getOrderedFeatures( vectorizer,     # fitted vectorizer from a pipeline
         ordered from highest coef to lowest.
     Assumes:  vectorizer has get_feature_names() method
     '''
-    if not hasattr(classifier, 'coef_'):   # not all classifiers have coef's
-        return []
+    if hasattr(classifier, 'feature_importances_'):
+	coefficients = classifier.feature_importances_
+    elif hasattr(classifier, 'coef_'):
+	coefficients = classifier.coef_[0].tolist()
+    else:
+	return []
 
-    coefficients = classifier.coef_[0].tolist()
     featureNames = vectorizer.get_feature_names()
 
     pairList = zip(featureNames, coefficients)
