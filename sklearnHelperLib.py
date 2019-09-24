@@ -95,6 +95,62 @@ def getOrderedFeatures( vectorizer,     # fitted vectorizer from a pipeline
     return sorted(pairList, key=selCoef, reverse=True)
 # ---------------------------
 
+def getConfidenceValues(classifier,
+			samples,		# list of samples to be predicted
+			positiveClass=1,	# value in y_ considered "pos"
+			):
+    """
+    Return a list of "confidence" values for the prediction of each sample.
+    If classifier does not have any mechanism to return confidences, return None
+    Assumes predictions are binary (for two classes, positive and negative)
+    """
+    if classifier and hasattr(classifier, "decision_function"):
+	confidences = classifier.decision_function(samples).tolist()
+    elif classifier and hasattr(classifier, "predict_proba"):
+	confidences = getProbaConfidences(classifier, samples,
+							positiveClass=positiveClass)
+    else:
+	confidences = None
+    return confidences
+# ---------------------------
+
+def getProbaConfidences(classifier,
+			samples,		# list of samples to be predicted
+			positiveClass=1		# value in y_ considered "pos"
+			):
+    """
+    Compute "confidence" values for predictions when classifier has
+	predict_proba() method
+    Mimic how decision_function() works in classifiers w/ that method:
+	Return "confidence" for the predicted class, but make this:
+	    pos if the predicted class is the positiveClass (index)
+	    neg if the predicted class is not the positiveClass
+    See
+    https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.SGDClassifier.html#sklearn.linear_model.SGDClassifier.decision_function
+    https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html#sklearn.ensemble.RandomForestClassifier.predict_proba
+    https://datascience.stackexchange.com/questions/22762/understanding-predict-proba-from-multioutputclassifier
+
+    Assumes predictions are binary (for two classes, positive and negative)
+    Assumes classifier hasattr(classifier, "predict_proba"):
+
+    JIM: This works for RandomForestClassifier. 
+    Need to check this is consistent for other classifiers w/ predict_proba.
+    """
+    confidences = []
+    negativeClass = 1 - positiveClass
+
+    values = classifier.predict_proba(samples)
+
+    for i in range(len(values)):            # for each doc
+	posProb = values[i][positiveClass]
+	negProb = values[i][negativeClass]
+	if posProb >= negProb:
+	    confidences.append(posProb)
+	else:
+	    confidences.append(-negProb)
+    return confidences
+# ---------------------------
+
 class FeatureDocCounter(BaseEstimator, TransformerMixin):
     """
     An sklearn Estimator that gives you access to the number of documents each

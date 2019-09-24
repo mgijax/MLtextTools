@@ -817,50 +817,12 @@ class PredictionFormatter (object):
 	"""
 	Compute "confidence" values (and abs value)
 	"""
-	if pipeline and hasattr(pipeline,"decision_function"):
-	    self.confidences = \
-			pipeline.decision_function(docSet.getDocs()).tolist()
-	    self.absConf     = map(abs, self.confidences)
-	elif pipeline and hasattr(pipeline,"predict_proba"):
-	    self.setProbaConfidences(pipeline, docSet)
-	else:
+	self.confidences = skHelper.getConfidenceValues(pipeline, docSet.getDocs(),
+						    positiveClass=self.positiveClass)
+	if not self.confidences:
 	    self.confidences = [ 0.0 for x in range(docSet.getNumDocs()) ]
-	    self.absConf     = [ 0.0 for x in range(docSet.getNumDocs()) ]
-    # ---------------------------
 
-    def setProbaConfidences(self, pipeline, docSet):
-	"""
-	Compute "confidence" values for predictions when classifier has
-	    predict_proba() method
-	Mimic how decision_function() works in classifiers w/ that method:
-	    Return "confidence" for the predicted class, but
-	    make this
-		pos if the predicted class is the self.positiveClass (index)
-		neg if the predicted class is not the positiveClass
-	See
-	https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.SGDClassifier.html#sklearn.linear_model.SGDClassifier.decision_function
-	https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html#sklearn.ensemble.RandomForestClassifier.predict_proba
-	https://datascience.stackexchange.com/questions/22762/understanding-predict-proba-from-multioutputclassifier
-
-	JIM: This works for RandomForestClassifier. 
-	Need to check this is consistent for other classifiers w/ predict_proba.
-	"""
-	self.confidences = []
-	self.absConf     = []
-	posClassIndex = self.positiveClass
-	negClassIndex = 1 - posClassIndex
-
-	values = pipeline.predict_proba(docSet.getDocs())
-
-	for i in range(len(values)):		# for each doc
-	    posProb = values[i][posClassIndex]
-	    negProb = values[i][negClassIndex]
-	    if posProb >= negProb:
-		self.confidences.append(posProb)
-		self.absConf.append(posProb)
-	    else:
-		self.confidences.append( -negProb)
-		self.absConf.append( negProb)
+	self.absConf     = map(abs, self.confidences)
     # ---------------------------
 
     def getHeaderText(self):	return '\t'.join(self.fieldNames) + '\n'
