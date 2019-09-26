@@ -19,6 +19,9 @@ import string
 import os
 import time
 import argparse
+import sklearnHelperLib as skHelper
+
+DEFAULT_SAMPLE_TYPE  = "BaseSample"
 #-----------------------------------
 
 def parseCmdLine():
@@ -28,15 +31,21 @@ def parseCmdLine():
     parser.add_argument('inputFiles', nargs=argparse.REMAINDER,
     	help='files of samples, "-" for stdin')
 
-    parser.add_argument('--omitrejects', dest='omitRejects', action='store_true',
-	required=False, help="don't write reject samples, default is write")
+    parser.add_argument('--sampletype', dest='sampleObjTypeName',
+	default=DEFAULT_SAMPLE_TYPE,
+	help="Sample class name in sampleDataLib. Default: %s" \
+						    % DEFAULT_SAMPLE_TYPE)
+
+    parser.add_argument('--omitrejects', dest='omitRejects',
+	action='store_true', required=False,
+	help="don't write reject samples, default is write")
 
     parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
 	required=False, help="skip helpful messages to stderr")
 
     parser.add_argument('-p', '--preprocessor', metavar='PREPROCESSOR',
 	dest='preprocessors', action='append', required=False, default=[],
-    	help='preprocessor method name in sampleDataLib, multiples are applied in order. Default is none.' )
+	help='preprocessor, multiples are applied in order. Default is none.' )
 
     args = parser.parse_args()
 
@@ -51,23 +60,33 @@ args = parseCmdLine()
 def main():
 
     # extend path up multiple parent dirs, hoping we can import sampleDataLib
-    sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,4)]] + \
+    sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] + \
 		    sys.path
     import sampleDataLib
 
+    if not hasattr(sampleDataLib, args.sampleObjTypeName):
+        sys.stderr.write("invalid sample class name '%s'" \
+                                                    % args.sampleObjTypeName)
+        exit(5)
+
+    sampleObjType = getattr(sampleDataLib, args.sampleObjTypeName)
+    verbose("Sample type '%s'\n" % args.sampleObjTypeName)
+
     verbose("Preprocessing steps: %s\n" % ' '.join(args.preprocessors)) 
-    counts = { 'samples':0, 'skipped':0}
+    totNumSamples = 0
+    totNumSkipped = 0
     firstFile = True
     startTime = time.time()
 
     for fn in args.inputFiles:
 
-	verbose("Reading %s\n" % fn)
-
+	verbose("Preprocessing '%s'\n" % fn)
 	if fn == '-': fn = sys.stdin
 
-	# JIM: Classified vs Unclassified ? will need to deal with this
-	sampleSet = sampleDataLib.ClassifiedSampleSet()
+	numSamples = 0
+	numSkipped = 0
+
+	sampleSet = sampleDataLib.SampleSet(sampleObjType)
 	sampleSet.read(fn)
 
 	# save prev sample ID for printing if we get an exception.
@@ -75,27 +94,30 @@ def main():
 	prevSampleName = 'very first sample'
 
 	for rcdnum, sample in enumerate(sampleSet.sampleIterator()):
-	    counts['samples'] += 1
+	    numSamples += 1
 	    try:
 		for pp in args.preprocessors:
-		    sample = getattr(sample, pp)()  # preprocessor method on sample
+		    sample = getattr(sample, pp)()  # preproc method on sample
 
 		if args.omitRejects and sample.isReject():
 		    verbose( "%s, %s skipped\n" % \
-				(sample.getRejectReason(), sample.getSampleName()) )
-		    counts['skipped'] += 1
+			    (sample.getRejectReason(), sample.getSampleName()) )
+		    numSkipped += 1
 		prevSampleName = sample.getSampleName()
 	    except:
-		sys.stderr.write( "\nException in %s record %s prevID %s\n\n" % \
-				    (fn, rcdnum, prevSampleName)  )
+		sys.stderr.write("\nException in %s record %s prevID %s\n\n" % \
+				    (fn, rcdnum, prevSampleName))
 		raise
 
 	sampleSet.write( sys.stdout, writeHeader=firstFile,
-						    omitRejects=args.omitRejects )
+						omitRejects=args.omitRejects )
 	firstFile = False
+	totNumSamples += numSamples
+	totNumSkipped += numSkipped
+	verbose('...done. %d samples, %d skipped\n' % (numSamples, numSkipped))
 
     verbose("Samples processed: %d \t Samples skipped: %d\n" % \
-					(counts['samples'], counts['skipped']) )
+						(totNumSamples, totNumSkipped))
     verbose( "Total time: %8.3f seconds\n\n" % (time.time()-startTime))
 # ---------------------
 
