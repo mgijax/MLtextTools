@@ -817,8 +817,8 @@ class PredictionFormatter (object):
 	"""
 	Compute "confidence" values (and abs value)
 	"""
-	self.confidences = skHelper.getConfidenceValues(pipeline, docSet.getDocs(),
-						    positiveClass=self.positiveClass)
+	self.confidences = skHelper.getConfidenceValues(pipeline,
+			    docSet.getDocs(), positiveClass=self.positiveClass)
 	if not self.confidences:
 	    self.confidences = [ 0.0 for x in range(docSet.getNumDocs()) ]
 

@@ -108,7 +108,7 @@ def getConfidenceValues(classifier,
 	confidences = classifier.decision_function(samples).tolist()
     elif classifier and hasattr(classifier, "predict_proba"):
 	confidences = getProbaConfidences(classifier, samples,
-							positiveClass=positiveClass)
+							    positiveClass=positiveClass)
     else:
 	confidences = None
     return confidences
@@ -144,7 +144,7 @@ def getProbaConfidences(classifier,
     for i in range(len(values)):            # for each doc
 	posProb = values[i][positiveClass]
 	negProb = values[i][negativeClass]
-	if posProb >= negProb:
+	if posProb > negProb:
 	    confidences.append(posProb)
 	else:
 	    confidences.append(-negProb)

@@ -8,9 +8,6 @@
 #   and the prediction report formats.
 #
 # Samples to predict may have a known class (or not)
-# We assume, however, all samples have the same input structure/columns
-# We also assume all samples have been preprocessed (e.g., stemming, etc.),
-#   no preprocessing steps are performed here.
 #
 # This script is intended to be independent of specific ML projects.
 # The details of data samples are intended to be encapsulated in
@@ -22,17 +19,18 @@ import sys
 import string
 import pickle
 import argparse
+import sklearnHelperLib as skHelper
 #-----------------------------------
 
-PIPELINE_PICKLE_FILE   = "goodModel.pkl"
-DEFAULT_OUTPUT   = "predictions.tsv"
-DEFAULT_OUTPUT_LONG  = "predictions_long.tsv"
+PIPELINE_PICKLE_FILE = "model.pkl"
+DEFAULT_SAMPLE_TYPE  = "BaseSample"
+DEFAULT_OUTPUT_FIELDSEP  = "|"
 
 #-----------------------------------
 
 def parseCmdLine():
     parser = argparse.ArgumentParser( \
-		description='predict samples/records relevance')
+		description='predict samples. Write predictions to stdout')
 
     parser.add_argument('inputFiles', nargs=argparse.REMAINDER,
 	help='files of samples')
@@ -41,92 +39,147 @@ def parseCmdLine():
 	required=False, default=PIPELINE_PICKLE_FILE,
     	help='pickled model file. Default: %s' % PIPELINE_PICKLE_FILE)
 
-    parser.add_argument('-o', '--output', dest='outputFile', action='store',
-	required=False, default=DEFAULT_OUTPUT,
-    	help='output file name, predictions + confidences. Default: %s'\
-							% DEFAULT_OUTPUT)
-    parser.add_argument('--long', dest='writeLong',
-        action='store_const', required=False, default=False, const=True,
-        help='write long output file too. Default: False')
+    parser.add_argument('--sampletype', dest='sampleObjTypeName',
+	default=DEFAULT_SAMPLE_TYPE,
+	help="Sample class name in sampleDataLib. Default: %s" \
+							% DEFAULT_SAMPLE_TYPE)
 
-    parser.add_argument('-l', '--longfile', dest='longFile', action='store',
-	required=False, default=DEFAULT_OUTPUT_LONG,
-    	help='long output file name: predictions + text... . Default: %s' \
-						% DEFAULT_OUTPUT_LONG)
+    parser.add_argument('--fieldsep', dest='outputFieldSep',
+	default=DEFAULT_OUTPUT_FIELDSEP,
+	help="prediction output field separator. Default: '%s'" \
+						    % DEFAULT_OUTPUT_FIELDSEP)
+    parser.add_argument('-p', '--preprocessor', metavar='PREPROCESSOR',
+	dest='preprocessors', action='append', required=False, default=None,
+	help='preprocessor, multiples are applied in order. Default is none.' )
+
+    parser.add_argument('--long', dest='longFile', action='store',
+	required=False, default=None,
+    	help='(not implemented) also write long output to this file. Default: no long output')
+
+    parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
+	    required=False, help="skip helpful messages to stderr")
+
     args = parser.parse_args()
 
     return args
 #----------------------
   
+args = parseCmdLine()
+
 def main():
-    args = parseCmdLine()
 
     # extend path up multiple parent dirs, hoping we can import sampleDataLib
     sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
     import sampleDataLib
 
     #####################
-    # Get Trained Model
-    print "Loading model %s" % args.model
+    if not hasattr(sampleDataLib, args.sampleObjTypeName):
+	sys.stderr.write("invalid sample class name '%s'" \
+						    % args.sampleObjTypeName)
+	exit(5)
+
+    sampleObjType = getattr(sampleDataLib, args.sampleObjTypeName)
+    verbose("Sample type '%s'\n" % args.sampleObjTypeName)
+
+    #####################
+    verbose("Loading model '%s'\n" % args.model)
     with open(args.model, 'rb') as bp:
 	model = pickle.load(bp)
 
-    hasConf = hasattr(model, "decision_function")# confidence values?
+    		# Some classifiers write process info to stdout messing up our
+		#   output.
+		# "classifier__verbose" assumes the model is a Pipeline
+		#   with a classifier step. This seems like a pretty safe
+		#   assumption, but if it turns out to be false, we'd
+		#   need more logic to figure out the name of the "verbose"
+		#   argument.
+    model.set_params(classifier__verbose=0)
+    verbose("...done\n")
 
     #####################
-    # Read file of samples to predict
+    sampleSet = sampleDataLib.SampleSet(sampleObjType)
 
-    samples = []			# sample records
-    docs = []				# documents (from samples)
-    
     for fn in args.inputFiles:
-	print "Reading %s" % fn
-	#ip = open(args.inputFile, 'r')
+	verbose("Reading '%s'\n" % fn)
+	if fn == '-': fn = sys.stdin
 
-        rcds = open(fn,'r').read().split(sampleDataLib.RECORDSEP)
-        del rcds[-1]                   # empty rcd at end after split
-
-	for rcd in rcds[1:]:		# skip header rcd
-	    sample = sampleDataLib.SampleRecord(rcd)
-
-	    docs.append(sample.getDocument())
-	    samples.append(sample)
-
-    print "...done %d documents." % (len(docs))
+	sampleSet.read(fn)
+    verbose("...done %d documents.\n" % sampleSet.getNumSamples())
 
     #####################
-    # predict!!
-    print "Predicting...."
-    y_predicted = model.predict(docs)
-    if hasConf:
-	# parallel list to samples[] and docs[]
-        confs = model.decision_function(docs).tolist()
-    print "...done"
+    if args.preprocessors:
+	verbose("Running preprocessors %s\n" % str(args.preprocessors))
+	sampleSet = preprocess(sampleSet, args.preprocessors)
+	verbose("...done\n")
 
     #####################
-    # Write Output Files
-    print "Writing prediction file(s)..."
+    verbose("Predicting\n")
 
-    fp = open(args.outputFile, 'w')
+    y_predicted = model.predict(sampleSet.getDocuments(),)
+    classNames = sampleSet.getSampleClassNames()
+    predictedClasses = [ classNames[y] for y in y_predicted ]
 
-    reporter = sampleDataLib.PredictionReporter(samples[0],hasConf)
-    fp.write(reporter.getPredOutputHeader())
+    verbose("...done\n")
 
-    if args.writeLong:
-	lfp = open(args.longFile, 'w')
-	lfp.write(reporter.getPredLongOutputHeader())
+    #####################
+    verbose("Getting prediction confidence values\n")
+    confidences = skHelper.getConfidenceValues(model, sampleSet.getDocuments(),
+			    positiveClass=sampleSet.getY_positive(),)
+    if not confidences:
+	verbose("no confidence values available for this model\n")
+	confidences = [ 0.0 for x in range(sampleSet.getNumSamples()) ]
+    verbose("...done\n")
 
-    for i, (s, y) in enumerate(zip(samples, y_predicted, )):
-	if hasConf: conf = confs[i]
-	else:       conf = None
-	fp.write(reporter.getPredOutput(s, y, confidence=conf))
-	if args.writeLong:
-	    lfp.write(reporter.getPredLongOutput(s, y, confidence=conf))
+    #####################
+    verbose("Writing predictions\n")
+    writePredictions(model, sampleSet, predictedClasses, confidences)
+    verbose("...done\n")
+# ---------------------------
 
-    print "...done %d lines written to %s" % (len(samples), args.outputFile)
-    if args.writeLong:
-	print "...done %d lines written to %s" % (len(samples), args.longFile)
+def preprocess(sampleSet,	# samples to preprocess
+		preprocessors,	# list of preprocessor function names
+		):
+    # JIM: maybe move this to sklearnHelperLib?
+
+    # Save prev sample ID for printing if we get an exception.
+    # Gives us a fighting chance of finding the offending record
+    prevSampleName = 'very first sample'
+
+    for rcdnum, sample in enumerate(sampleSet.sampleIterator()):
+	try:
+	    for pp in preprocessors:
+		sample = getattr(sample, pp)()  # preprocessor method on sample
+
+	    prevSampleName = sample.getSampleName()
+	except:
+	    sys.stderr.write("\nException in %s record %s prevID %s\n\n" % \
+						(fn, rcdnum, prevSampleName))
+	    raise
+    return sampleSet
+# ---------------------------
+
+def writePredictions(model,
+		    sampleSet,
+		    predictedClasses,
+		    confidences,
+		    ):
+    fp = sys.stdout
+
+    # JIM: should we write more info? title? journal?
+    # long output not implemented yet
+    header = args.outputFieldSep.join(['ID', 'Prediction', 'Confidence'])
+    fp.write(header + '\n')
+    
+    for className, ID, confidence in \
+		zip(predictedClasses, sampleSet.getSampleIDs(), confidences):
+	l = args.outputFieldSep.join([str(ID), className, "%6.3f" % confidence])
+	fp.write(l + '\n')
 
     return
+# ---------------------------
+def verbose(text):
+    if args.verbose:
+	sys.stderr.write(text)
+	sys.stderr.flush()
 # ---------------------------
 main()
