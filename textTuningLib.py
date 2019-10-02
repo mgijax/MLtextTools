@@ -227,7 +227,7 @@ class TextPipelineTuningHelper (object):
 	self.gsVerbose          = args.gsVerbose
 
 	self.sampleObjType   = getattr(sampleDataLib, args.SAMPLE_OBJ_TYPE_NAME)
-	self.yClassNames        = self.sampleObjType.getSampleClassNames()
+	self.yClassNames        = self.sampleObjType.getClassNames()
 	self.yClassToScore      = args.yClassToScore
 	self.rptClassNames      = args.rptClassNames
 	self.rptClassMapping    = args.rptClassMapping
