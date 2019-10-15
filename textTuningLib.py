@@ -181,6 +181,7 @@ def parseCmdLine():
     args.compareBeta     = config.getint  ("MODEL_TUNING", "COMPARE_BETA")
     args.testSplit       = config.getfloat("MODEL_TUNING", "TEST_SPLIT")
     args.numCV           = config.getint  ("MODEL_TUNING", "NUM_CV")
+    args.numJobs         = eval(config.get("MODEL_TUNING", "NUM_JOBS"))
     args.yClassToScore   = config.getint  ("CLASS_NAMES",  "y_class_to_score")
     args.rptClassNames   = eval(config.get("CLASS_NAMES",  "rpt_class_names"))
     args.rptClassMapping = eval(config.get("CLASS_NAMES",  "rpt_class_mapping"))
@@ -214,6 +215,7 @@ class TextPipelineTuningHelper (object):
 	self.testDataPath       = args.testDataPath
 	self.testSplit          = args.testSplit
 	self.gridSearchBeta     = args.gridSearchBeta
+	self.numJobs		= args.numJobs
 	self.numCV              = args.numCV
 
 	self.tuningIndexFile    = args.tuningIndexFile
@@ -352,7 +354,7 @@ class TextPipelineTuningHelper (object):
 				cv=      cv,
 				refit=   True,
 				verbose= self.gsVerbose,
-				n_jobs=  5,
+				n_jobs=  self.numJobs,
 				)
 	self.gs.fit( docs_gs, y_gs )
 
@@ -1096,15 +1098,15 @@ def getRandomSeedReport( seedDict ):
 
 if __name__ == "__main__":   ############### ad hoc test code ##############3
     if True:	# DocumentSet  and Prediction Formatter testing
-	print "docs 1"
+	print("docs 1")
 	d = DocumentSet()
 
 	d.load('Data/smallset/testSetFig.txt')
 	d.setPredictions([0 for i in range(100)])
-	print len(d.getDocs())
-	print d.getSampleNames()[:5]
-	print d.getYvalues()[:5]
-	print d.getYvaluesAsList()[:5]
+	print(len(d.getDocs()))
+	print(d.getSampleNames()[:5])
+	print(d.getYvalues()[:5])
+	print(d.getYvaluesAsList()[:5])
 
 	formatter = PredictionFormatter(d, None)
 	sys.stdout.write(formatter.getHeaderText())
@@ -1113,9 +1115,9 @@ if __name__ == "__main__":   ############### ad hoc test code ##############3
 
     if True:	# split testing
 	d2 = d.split(splitSize=0.2)
-	print "docs 1 after split"
-	print len(d.getDocs())
-	print d.getSampleNames()[:5]
+	print("docs 1 after split")
+	print(len(d.getDocs()))
+	print(d.getSampleNames()[:5])
 
 	d.setPredictions([0 for i in range(d.getNumDocs())])
 	formatter = PredictionFormatter(d, None)
@@ -1123,9 +1125,9 @@ if __name__ == "__main__":   ############### ad hoc test code ##############3
 	for line in formatter.getNextPredictionText():
 	    sys.stdout.write(line)
 
-	print "docs 2"
-	print len(d2.getDocs())
-	print d2.getSampleNames()[:5]
+	print("docs 2")
+	print(len(d2.getDocs()))
+	print(d2.getSampleNames()[:5])
 
 	d2.setPredictions([0 for i in range(d2.getNumDocs())])
 	formatter = PredictionFormatter(d2, None)
@@ -1134,6 +1136,6 @@ if __name__ == "__main__":   ############### ad hoc test code ##############3
 	    sys.stdout.write(line)
 
     if True:	# load from directory testing
-	print "docs 3"
+	print("docs 3")
 	d3 = DocumentSet()
-	print d3.load('Data/smallset').getSampleNames()[:5]
+	print(d3.load('Data/smallset').getSampleNames()[:5])
