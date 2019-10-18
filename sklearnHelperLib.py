@@ -12,6 +12,7 @@ import sys
 import os.path
 import re
 import string
+from collections import Mapping, Iterable
 
 from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
@@ -19,17 +20,37 @@ import nltk.stem.snowball as nltk
 
 #-----------------------------------
 
-def isOneCombination(paramDict,	# { key: [list] } dict whose values are lists
+def isOneCombination(paramGrid,	# GridSearchCV params: dict or list of dicts
     ):
     '''
-    paramDict is a dictionary of GridSearchCV parameters.
     Return True if there is only one combination of parameters
     Return False if there are multiple combinations
     '''
-    for l in paramDict.values():
-	if len(l) > 1: return False
+
+    if isinstance(paramGrid, Mapping):
+	for l in paramGrid.values():
+	    if len(l) > 1: return False
+
+    elif isinstance(paramGrid, Iterable): # list of dictionaries
+	return False
+
+    else:
+	raise TypeError('Parameter grid is not a dict or list of dicts')
 
     return True
+#-----------------------------------
+
+def convertParamGrid(paramDict,	# GridSearchCV params: dict
+    ):
+    '''
+    "Flatten" a GridSearchCV parameter dictionary, e.g., 
+    { key0 : [l0, l1, ...], key1: [m0, m1, ...] }
+    --> {key0: l0, key1: m0}
+    '''
+    result = {}
+    for key,val in paramDict.items():
+	result[key] = val[0]
+    return result
 #-----------------------------------
 
 def getFalsePosNeg( y_true,		# [true vals], typically 0/1 or yes/no 
@@ -374,18 +395,18 @@ stemmingNotes= \
 '''
 if __name__ == "__main__":
     # ad hoc test code
-    if False:    # predictionType() testing
-	print predictionType(1, 0, positiveClass=1)	# FN
-	print predictionType(1, 0, positiveClass=0)	# FP
-	print
-	print predictionType(0, 1, positiveClass=1)	# FP
-	print predictionType(0, 1, positiveClass=0)	# FN
-	print
-	print predictionType(0, 0, positiveClass=1)	# TN
-	print predictionType(0, 0, positiveClass=0)	# TP
-	print
-	print predictionType(1, 1, positiveClass=1)	# TP
-	print predictionType(1, 1, positiveClass=0)	# TN
+    if True:    # predictionType() testing
+	print("should be FN: " + predictionType(1, 0, positiveClass=1))	# FN
+	print("should be FP: " + predictionType(1, 0, positiveClass=0))	# FP
+	print('')
+	print("should be FP: " + predictionType(0, 1, positiveClass=1))	# FP
+	print("should be FN: " + predictionType(0, 1, positiveClass=0))	# FN
+	print('')
+	print("should be TN: " + predictionType(0, 0, positiveClass=1))	# TN
+	print("should be TP: " + predictionType(0, 0, positiveClass=0))	# TP
+	print('')
+	print("should be TP: " + predictionType(1, 1, positiveClass=1))	# TP
+	print("should be TN: " + predictionType(1, 1, positiveClass=0))	# TN
 
     if True:	# getFalsePosNeg() testing
 	fpos, fneg = getFalsePosNeg([0,1,0,1],
@@ -393,13 +414,21 @@ if __name__ == "__main__":
 				    ['s1', 's2 FN', 's3 FP', 's4'],
 				    positiveClass=1,
 				    )
-	print 'false Positives: ', fpos
-	print 'false Negatives: ', fneg
+	print('false Positives: ', fpos)
+	print('false Negatives: ', fneg)
 	fpos, fneg = getFalsePosNeg([0,1,0,1],
 				    [0,0,1,1],
 				    ['s1', 's2 FP', 's3 FN', 's4'],
 				    positiveClass=0,
 				    )
-	print 'false Positives: ', fpos
-	print 'false Negatives: ', fneg
-
+	print('false Positives: ', fpos)
+	print('false Negatives: ', fneg)
+    if True:  # param grid tests
+	simpleGrid = {'key0' : ['a0'], 'key1': ['b0'] }
+	multiGrid = {'key0' : ['a0'], 'key1': ['b1','b2'], 'key2': ['c2','c3']}
+	dictGrid = [ simpleGrid, multiGrid ]
+	print("should be True: %s" % isOneCombination(simpleGrid)) 
+	print("should be False: %s" % isOneCombination(multiGrid)) 
+	print("should be False: %s" % isOneCombination(dictGrid)) 
+	print(str(convertParamGrid(simpleGrid)))
+	print(str(convertParamGrid(multiGrid)))

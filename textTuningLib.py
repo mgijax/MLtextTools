@@ -27,43 +27,86 @@ Assumes:
 * probably other things...
 
 Evaluating Pipeline Parameters:
-Two Approaches are supported
-    (1) k-fold cross validation using GridSearchCV.
-    (2) you provide a validation set
-    For either approach you can provide either
-	* a sample set that will be randomly split into a training
-	    and test set.
-	* separate training and test sets
-    We'll evaluate the different parameter combinations via cross validation (1)
-    or on the validation set provided (2) to select the best scoring parameters.
-    Then the pipeline with best parameter combination is used to predict the
-    test set and its results are reported.
+Two Approaches are supported/implemented
+    (1) you have a known sample set.
+	(a) Randomly splits this into a training set and a validation set
+	(you could treat the validation set as a test set in the simplest
+	cases where you don't expect to iterate and experiment too much).
+	(b) Uses k-fold cross validation via GridSearchCV on the training set
+	to optimize any pipeline parameters.  (if there is only one set of
+	parameters, skips this step and goes to (c))
+	(c) Using the optimal parameters, retrains on the whole (non-cv'ed)
+	training set (GridSearchCV does this by default).
+	(d) Predicts, evaluates, and reports results against the validation set
+
+	This is most appropriate when the validation set and training sets
+	come from the same distribution and you don't necessarily want to
+	maintain a validation set - maybe for quick and dirty projects.
+
+    (2) you provide a validation set and training set.
+	(a) Runs GridSearchCV on the training set to optimize any pipeline
+	parameters against your validation set- no cv.
+	(if there is only 1 set of parameters, skips this step and goes to (b))
+	(b) Using the best pipeline parameters, trains on the training set.
+	(c) Predicts, evaluates, and reports results against the validation set.
+
+	This is most appropriate when your validation set comes from a
+	different distribution than the training set and/or you want to
+	maintain a validation set.
+
+    (3) (not implemented) you provide a validation set and training set.
+	(a) Uses k-fold cross validation via GridSearchCV on the training set
+	to optimize any pipeline parameters. (if there is only one set of
+	parameters, skips this step and goes to (b))
+	(b) Using the optimal parameters, retrains on the whole (non-cv'ed)
+	training set (GridSearchCV does this by default).
+	(c) Predicts, evaluates, and reports results against the validation set.
+
+	This seems intermediate between (1) and (2). Seems kind of weird NOT
+	to optimize the pipeline parameters against your validation set, but
+	maybe this makes sense sometimes.
+
+    In any of the above approaches, you may optionally provide a separate test
+    set to predict using an additional trained model.
+    In this case the model uses the optimal parameters from above
+    but is trained on the training + validation sets (to use all available
+    classified samples).
+
+    You can use these results to compare to the validation set results, but
+    you should not use these test results to make decisions about next steps
+    to try since this would lead toward tuning your model for the specific
+    test set and making your model less likely to generalize to future inputs.
+
 
 Other functionality:
 * Many options/parameters for this process are specified in a config file
     and/or command line arguments (to the tuning script using this module)
     that this module processes.
 
-* Support for generating random seeds or using fixed specified seeds.
+* Support for generating/reporting random seeds or using fixed specified seeds.
+    (for random splits and training seeds)
 
-* Supports use of a pipeline step, FeatureDocCounter (defined in
+* Supports use of a custom pipeline step, FeatureDocCounter (defined in
     sklearnHelperLib), which you can put into a pipeline just after the
     vectorizer step, and it will give you access to
     the number of documents each feature appears in.
 
 Outputs:
 * log of the tuning run to stdout. This has lots of subsections like
-    test metrics
+    prediction metrics
     best pipeline parameters
     top pos/neg weighted features (If the 'classifier' supports getting
 				    weighted coefficients)
     vectorizer report
     false positives/negatives
     sample set size report
-* (optional) write a test metrics summary line to an index file
+* (optional) write a 1-line metrics summary line to an index file
 	(usually index.out)
 * (optional) write features + their weights to a feature file
-* (optional) write test and training set prediction files
+* (optional) write training, validation set prediction files
+* (optional) write pkl file with the trained model. This is the model using the
+    optimal parameters from above but is trained on the training + validation
+    set.
 
 Coding Convention:
     Use camelCase for all the names here, but
@@ -81,6 +124,7 @@ import argparse
 import utilsLib
 import sklearnHelperLib as skHelper
 
+from sklearn.base import clone
 import numpy as np
 from sklearn.datasets import load_files
 from sklearn.model_selection import train_test_split
@@ -157,15 +201,15 @@ def parseCmdLine():
 							TUNING_INDEX_FILE)
     parser.add_argument('-p', '--predict', dest='wPredictions',
 			action='store_true', default=False,
-                        help='write predictions for test & training sets')
+                        help='write predictions for validation & training sets')
 
     parser.add_argument('--nopredict', dest='wPredictions',
 			action='store_false', default=False,
-	    help="don't write predictions for test & training sets (default)")
+	    help="don't write validation & training set predictions (default)")
 
     parser.add_argument('--outprefix', dest='outputFilePrefix', 
 			default=OUTPUT_FILE_PREFIX,
-	    help='output file prefix (features & preds). Default: %s' % \
+	    help='filename prefix for features & preds files. Default: %s' % \
 						    OUTPUT_FILE_PREFIX)
     parser.add_argument('--features', dest='writeFeatures',
 			action='store_true', default=False,
@@ -179,7 +223,7 @@ def parseCmdLine():
     args.SAMPLE_OBJ_TYPE_NAME = config.get("CLASS_NAMES","SAMPLE_OBJ_TYPE_NAME")
     args.gridSearchBeta  = config.getint  ("MODEL_TUNING", "GRIDSEARCH_BETA")
     args.compareBeta     = config.getint  ("MODEL_TUNING", "COMPARE_BETA")
-    args.testSplit       = config.getfloat("MODEL_TUNING", "TEST_SPLIT")
+    args.validationSplit = config.getfloat("MODEL_TUNING", "VALIDATION_SPLIT")
     args.numCV           = config.getint  ("MODEL_TUNING", "NUM_CV")
     args.numJobs         = eval(config.get("MODEL_TUNING", "NUM_JOBS"))
     args.yClassToScore   = config.getint  ("CLASS_NAMES",  "y_class_to_score")
@@ -213,7 +257,7 @@ class TextPipelineTuningHelper (object):
 	self.trainDataPath      = args.trainDataPath
 	self.valDataPath        = args.valDataPath
 	self.testDataPath       = args.testDataPath
-	self.testSplit          = args.testSplit
+	self.validationSplit    = args.validationSplit
 	self.gridSearchBeta     = args.gridSearchBeta
 	self.numJobs		= args.numJobs
 	self.numCV              = args.numCV
@@ -243,31 +287,28 @@ class TextPipelineTuningHelper (object):
 
     def loadTrainValTestSets(self):
 	"""
-	Get the training, test, & validation sets (val is optional).
+	Get the training, validation, & test sets (test is optional).
 	This means setting three parallel lists:
 	    self.sampleNames_xxx	names (IDs) of the docs
 	    self.docs_xxx		the docs themselves (string)
 	    self.y_xxx			the class name index (0, 1)
 	    				y_xxx is an np.array
-	    For xxx in "train", "test", and "val"
+	    For xxx in "train", "val", "test"
 	"""
-
 	####### training set
 	self.trainSet = DocumentSet().load(self.trainDataPath)
 
+	####### Validation set
+	if self.valDataPath:
+	    self.valSet = DocumentSet().load(self.valDataPath)
+	else:		# no specified val set, split random set from training	
+	    self.valSet = self.trainSet.split(splitSize=self.validationSplit,
+						randomSeed=self.randForSplit)
 	####### test set
 	if self.testDataPath:
 	    self.testSet = DocumentSet().load(self.testDataPath)
-	else:		# no specified test set, split random set from training	
-	    self.testSet = trainSet.split(splitSize=self.testSplit,
-						randomSeed=self.randForSplit)
-	####### Validation set
-	if self.valDataPath:
-	    self.haveValSet = True
-	    self.valSet = DocumentSet().load(self.valDataPath)
 	else:
-	    self.haveValSet = False
-
+	    self.testSet = None
     #---------------------
 
     def getGridSearchParams(self):
@@ -281,12 +322,10 @@ class TextPipelineTuningHelper (object):
 	    Return docs_train, y_train, and the int cv value (num of folds)
 
 	If we do have a specified validation set, this is more subtle.
-	    Since we have a val set, we don't want to use k-fold, but
-	    we still want to use GridSearchCV to train/compare each permutation
-	    (so we want to use the GridSearch w/o the CV)
-
-	    Why use GridSearchCV to do this?
-	    Because it is coded to try the diff permutations in parallel.
+	    Since we have a val set, we don't want to use cv, but
+	    we still want to use GridSearchCV to train on each param permutation
+	    and evaluate on the val set
+	    (so we want to use the GridSearch w/o the k-folds)
 
 	    We'll combine the training set w/ the validation set into
 	    one document list,
@@ -310,7 +349,7 @@ class TextPipelineTuningHelper (object):
 
 	    Maybe there is a better way to do this, but I haven't found it.
 	"""
-	if self.haveValSet: 
+	if self.valDataPath:		# have a specified validation set 
 	    docs_gs = self.trainSet.getDocs() + self.valSet.getDocs()
 	    y_gs    = np.concatenate( (self.trainSet.getYvalues(),
 						    self.valSet.getYvalues()) )
@@ -329,63 +368,126 @@ class TextPipelineTuningHelper (object):
 
     def fit(self):
 	'''
-	run the GridSearchCV
-	FIXME: seems like we might often be running this on a fixed training
-	    and validation set without multiple parameter options
-	    - say on a newly preprocessed set of data.
-	    So we really don't need to do the gridsearch itself.
-	    Should think about refactoring to skip the gridsearch itself
-	    in these cases.
-	'''
-	# using _train _test variable names as is the custom in sklearn.
-	# "y_" are the correct classifications (labels) for the corresponding
-	#   samples
-	# _gs = grid search set
+	Find the best pipeline params (against validation) and Set:
 
+	    self.bestParams
+	    self.valSetEstimator      # Trained on tr set to predict val set
+		# Its subcomponents:
+		self.bestVectorizer
+		self.bestClassifier
+		self.featureEvaluator 	# (if any)
+		    self.featureValues  # (output of self.featureEvaluator)
+	    self.testSetEstimator     # Trained tr+val sets to predict test set
+				      # (if needed)
+	Subtleties:
+	    If there is only one pipelineParameters permutation, then using
+	    GridSearchCV() is very inefficient:
+		if given a specified validation set,
+		    it trains on the full training set
+			(which we need, but don't have access to)
+		    and then retrains again on the training + val set,
+			(which we may not need)
+			returning that as the best_estimator_
+		if using cv,
+		    it unnecessarily runs all the k-folds
+			(w/ same param permutation!)
+		    and then retrains on the full training set (which we need)
+
+	    So we avoid this by handling the one permutation case separately.
+	'''
 	self.verboseWrite("Loading sample sets\n")
 	self.loadTrainValTestSets()
+	self.testSetEstimator = None	# assume we don't need this.
 
-	self.verboseWrite("Starting GridSearch fit\n")
-	docs_gs, y_gs, cv = self.getGridSearchParams()
+	if skHelper.isOneCombination(self.pipelineParameters):
+	    self.verboseWrite("Training valSetEstimator on single param set\n")
 
-	self.gs = GridSearchCV( self.pipeline,
+	    self.bestParams = skHelper.convertParamGrid(self.pipelineParameters)
+	    self.pipeline.set_params( **self.bestParams)
+
+	    self.valSetEstimator = self.pipeline
+	    self.valSetEstimator.fit(self.trainSet.getDocs(),
+						    self.trainSet.getYvalues())
+
+	    if self.testSet or self.modelFile:
+		self.verboseWrite("Training testSetEstimator\n")
+		self.testSetEstimator = clone(self.pipeline)
+		docs = self.trainSet.getDocs() + self.valSet.getDocs()
+		y    = np.concatenate( (self.trainSet.getYvalues(),
+						self.valSet.getYvalues()) )
+		self.testSetEstimator.fit(docs, y)
+
+	    self.verboseWrite("Done training\n")
+
+	else:		# multiple pipeline params to try
+	    # Using "_train" "_test" variable names as is the custom in sklearn.
+	    # "y_" are the correct classifications (labels) for the
+	    #   corresponding samples
+	    # "_gs" = grid search set
+
+	    self.verboseWrite("Starting GridSearch\n")
+	    docs_gs, y_gs, cv = self.getGridSearchParams()
+
+	    gs = GridSearchCV( self.pipeline,
 				self.pipelineParameters,
 				scoring= self.scorer,
 				cv=      cv,
 				refit=   True,
 				verbose= self.gsVerbose,
 				n_jobs=  self.numJobs,
+				iid=True,
 				)
-	self.gs.fit( docs_gs, y_gs )
+	    gs.fit( docs_gs, y_gs )
+	    self.verboseWrite("Done Gridsearch\n")
 
-	# bestEstimator with the best params evaluated on val set or cv
-	# Note, this has been trained on train + val set or whole train set
-	#  (without any cv)
-	self.bestEstimator  = self.gs.best_estimator_
+	    self.bestParams = gs.best_params_
 
-	self.bestVectorizer   = self.bestEstimator.named_steps['vectorizer']
-	self.bestClassifier   = self.bestEstimator.named_steps['classifier']
-	self.featureEvaluator = self.bestEstimator.named_steps.get( \
+	    # gs.best_estimator_ is Pipeline w/ best params evaluated on
+	    #   val set or cv
+	    #   and trained on train + val set or whole train set (all folds)
+
+	    if self.valDataPath:	# have specified validation set
+		self.testSetEstimator = gs.best_estimator_	# on tr+val
+
+		self.verboseWrite("Training valSetEstimator\n")
+		self.valSetEstimator = clone(gs.best_estimator_)
+		self.valSetEstimator.fit(self.trainSet.getDocs(), # on tr set
+					self.trainSet.getYvalues())
+	    else:			# GridSearch on cv of training set
+		self.valSetEstimator = gs.best_estimator_   # on tr set
+
+		if self.testSet or self.modelFile:
+		    self.testSetEstimator = clone(gs.best_estimator_)
+
+		    # train on training + val sets
+		    self.verboseWrite("Training testSetEstimator\n")
+		    docs = self.trainSet.getDocs() + self.valSet.getDocs()
+		    y    = np.concatenate( (self.trainSet.getYvalues(),
+						self.valSet.getYvalues()) )
+		    self.testSetEstimator.fit(docs, y)
+
+	    self.verboseWrite("Done with best param search and training\n")
+
+	self.bestVectorizer   = self.valSetEstimator.named_steps['vectorizer']
+	self.bestClassifier   = self.valSetEstimator.named_steps['classifier']
+	self.featureEvaluator = self.valSetEstimator.named_steps.get( \
 						    'featureEvaluator',None)
 	if self.featureEvaluator == None: self.featureValues = None
 	else: self.featureValues = self.featureEvaluator.getValues()
 
-	# run estimator on the training, test sets so we can compare
+	# run estimator on the training, val sets so we can compare
 	self.verboseWrite("Predicting on training set\n")
 	self.trainSet.setPredictions( \
-		    self.bestEstimator.predict(self.trainSet.getDocs()) )
+		    self.valSetEstimator.predict(self.trainSet.getDocs()) )
 
-	self.verboseWrite("Predicting on test set\n")
-	self.testSet.setPredictions( \
-		    self.bestEstimator.predict(self.testSet.getDocs()) )
+	self.verboseWrite("Predicting on validation set\n")
+	self.valSet.setPredictions( \
+		    self.valSetEstimator.predict(self.valSet.getDocs()) )
 
-	# run on validation set so we can see how it does & compare to test
-	if self.haveValSet:
-	    # if val preds score close to training set, seems like overfit
-	    # otherwise, should be close to test set or somewhat intermediate
-	    self.verboseWrite("Predicting on validation set\n")
-	    self.valSet.setPredictions( \
-		    self.bestEstimator.predict(self.valSet.getDocs()) )
+	if self.testSet:		# run on test set too
+	    self.verboseWrite("Predicting on test set\n")
+	    self.testSet.setPredictions( \
+		    self.testSetEstimator.predict(self.testSet.getDocs()) )
 
 	self.verboseWrite("Done with predictions\n")
 
@@ -415,7 +517,8 @@ class TextPipelineTuningHelper (object):
 					 featureFile, values=self.featureValues)
 	output = self.getReportStart()
 
-	output += getFormattedMetrics("Training Set",self.trainSet.getYvalues(),
+	output += getFormattedMetrics("Training Set",
+				self.trainSet.getYvalues(),
 				self.trainSet.getPredictions(),self.compareBeta,
 				rptClassNames=self.rptClassNames,
 				rptClassMapping=self.rptClassMapping,
@@ -423,8 +526,7 @@ class TextPipelineTuningHelper (object):
 				yClassNames=self.yClassNames,
 				yClassToScore=self.yClassToScore,
 				)
-	if self.haveValSet:
-	    output += getFormattedMetrics("Validation Set",
+	output += getFormattedMetrics("Validation Set",
 				self.valSet.getYvalues(),
 				self.valSet.getPredictions(),self.compareBeta,
 				rptClassNames=self.rptClassNames,
@@ -433,7 +535,9 @@ class TextPipelineTuningHelper (object):
 				yClassNames=self.yClassNames,
 				yClassToScore=self.yClassToScore,
 				)
-	output += getFormattedMetrics("Test Set", self.testSet.getYvalues(),
+	if self.testSet:
+	    output += getFormattedMetrics("Test Set",
+				self.testSet.getYvalues(),
 				self.testSet.getPredictions(),self.compareBeta,
 				rptClassNames=self.rptClassNames,
 				rptClassMapping=self.rptClassMapping,
@@ -441,8 +545,8 @@ class TextPipelineTuningHelper (object):
 				yClassNames=self.yClassNames,
 				yClassToScore=self.yClassToScore,
 				)
-	output += getBestParamsReport(self.gs, self.pipelineParameters)
-	output += getGridSearchReport(self.gs, self.pipelineParameters)
+	output += getBestParamsReport(self.bestParams, self.pipelineParameters)
+	output += getGridSearchReport(self.pipeline, self.pipelineParameters)
 
 	if self.verbose: 
 	    features = skHelper.getOrderedFeatures( self.bestVectorizer,
@@ -453,15 +557,14 @@ class TextPipelineTuningHelper (object):
 					    nFeatures=nFeaturesReport)
 
 	    # false positives/negatives report.
-	    # JIM: Should this be for validation set or test or both?
 	    falsePos,falseNeg = skHelper.getFalsePosNeg( \
-					self.testSet.getYvalues(),
-					self.testSet.getPredictions(),
-					self.testSet.getSampleNames(),
+					self.valSet.getYvalues(),
+					self.valSet.getPredictions(),
+					self.valSet.getSampleNames(),
 					positiveClass=self.yClassToScore)
 
-	    output += getFalsePosNegReport( "Test set", falsePos, falseNeg,
-					    num=nFalsePosNegReport)
+	    output += getFalsePosNegReport( "Validation set", falsePos,
+					    falseNeg, num=nFalsePosNegReport)
 
 	    output += self.getSampleSummaryReport()
 
@@ -492,8 +595,8 @@ class TextPipelineTuningHelper (object):
 	'''
 	Handle writing a one-line summary of this run to an index file
 	'''
-	y_true = self.testSet.getYvalues()
-	y_predicted = self.testSet.getPredictions()
+	y_true = self.valSet.getYvalues()
+	y_predicted = self.valSet.getPredictions()
 
 	if sys.argv: tuningFile = sys.argv[0]
 	else: tuningFile = ''
@@ -516,8 +619,8 @@ class TextPipelineTuningHelper (object):
 	self.writePredictionsFile( self.outputFilePrefix + "_train_pred.txt",
 								self.trainSet)
 
-	self.writePredictionsFile( self.outputFilePrefix + "_test_pred.txt",
-								self.testSet)
+	self.writePredictionsFile( self.outputFilePrefix + "_val_pred.txt",
+								self.valSet)
     # ---------------------------
 
     def writePredictionsFile(self, outputFile, documentSet):
@@ -525,7 +628,7 @@ class TextPipelineTuningHelper (object):
 	if type(outputFile) == type(''): fp = open(outputFile, 'w')
 	else: fp = outputFile
 
-	formatter = PredictionFormatter(documentSet, self.bestEstimator,
+	formatter = PredictionFormatter(documentSet, self.valSetEstimator,
 		classNames=self.yClassNames, positiveClass=self.yClassToScore)
 
 	fp.write(formatter.getHeaderText())
@@ -535,7 +638,7 @@ class TextPipelineTuningHelper (object):
 
     def writeModel(self,):
 	fp = open(self.modelFile, 'wb')
-	pickle.dump(self.bestEstimator, fp)
+	pickle.dump(self.testSetEstimator, fp)
 	fp.close()
     # ---------------------------
 
@@ -560,11 +663,11 @@ class TextPipelineTuningHelper (object):
 		    ( ' ', 'Samples', 'Positive', 'Negative', '% Positive')
 
 	# One line for each document set
-	if self.haveValSet:
-	    output += formatter('Validation Set', self.valSet.getYvalues())
 	output += formatter('Training Set', self.trainSet.getYvalues())
-	output += formatter('Test Set',     self.testSet.getYvalues())
-	output += "TestSplit: %4.2f\n" % self.testSplit
+	output += formatter('Validation Set', self.valSet.getYvalues())
+	if self.testSet:
+	    output += formatter('Test Set', self.testSet.getYvalues())
+	output += "ValidationSplit: %4.2f\n" % self.validationSplit
 	return output
 
 # ---------------------------
@@ -900,23 +1003,23 @@ def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
 # ----------------------------
 
 def getBestParamsReport( \
-    gs,	    	# sklearn.model_selection.GridsearchCV that has been .fit()
+    bestParams,	# dict parameter_names->(best) parameter values from GridSearch
     parameters  # dict of parameters used in the gridsearch
     ):
     output = SSTART +'Best Pipeline Parameters:\n'
     for pName in sorted(parameters.keys()):
-	output += "%s: %r\n" % ( pName, gs.best_params_[pName] )
+	output += "%s: %r\n" % ( pName, bestParams[pName] )
 
     output += "\n"
     return output
 # ---------------------------
 
 def getGridSearchReport( \
-    gs,	    	# sklearn.model_selection.GridsearchCV that has been .fit()
-    parameters  # dict of parameters used in the gridsearch
+    pipeline,  	# Pipeline from a GridSearchCV that has been .fit()
+    parameters  # dict of parameters used in the GridSearchCV
     ):
     output = SSTART + 'GridSearch Pipeline:\n'
-    for stepName, obj in gs.best_estimator_.named_steps.items():
+    for stepName, obj in pipeline.named_steps.items():
 	output += "%s:\n%s\n\n" % (stepName, obj)
 
     output += SSTART + 'Parameter Options Tried:\n'
@@ -946,13 +1049,13 @@ def getVectorizerReport(vectorizer, nFeatures=10):
 # ---------------------------
 
 def getFalsePosNegReport( \
-	title,		# string title, typically  "Train" or "Test"
+	title,		# string title, typically  "Train" or "Validation"
 	falsePositives,	# list of (sample names) of the falsePositives
 	falseNegatives,	# ... 
 	num=5		# number of false pos/negs to display
 	):
     '''
-    Report on the false positives and false negatives in a test set
+    Report on the false positives and false negatives in a validation set
     '''
 
     output = SSTART+"False positives for %s: %d\n" % (title,len(falsePositives))
@@ -1001,7 +1104,7 @@ def getFormattedMetrics( \
 		    )
     output += "%s F%d: %7.5f (%s)\n\n" % \
 	    (title[:5], beta,
-	    fbeta_score(y_true,y_predicted,beta, pos_label=yClassToScore ),
+	    fbeta_score(y_true, y_predicted, beta, pos_label=yClassToScore),
 	    yClassNames[yClassToScore],
 	    )
     output += "%s\n" % getFormattedCM(y_true, y_predicted)
@@ -1010,7 +1113,7 @@ def getFormattedMetrics( \
 # ---------------------------
 
 def getFormattedCM( \
-    y_true,		# true category assignments for test set
+    y_true,		# true category assignments 
     y_predicted,	# predicted assignments
     rptClassNames=['yes', 'no'],
 		    # class labels for report outputs, in desired order
@@ -1101,7 +1204,7 @@ if __name__ == "__main__":   ############### ad hoc test code ##############3
 	print("docs 1")
 	d = DocumentSet()
 
-	d.load('Data/smallset/testSetFig.txt')
+	d.load('Data/smallset/valSetFig.txt')
 	d.setPredictions([0 for i in range(100)])
 	print(len(d.getDocs()))
 	print(d.getSampleNames()[:5])
