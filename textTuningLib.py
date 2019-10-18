@@ -602,15 +602,15 @@ class TextPipelineTuningHelper (object):
 	else: tuningFile = ''
 
 	with open(tuningIndexFile, 'a') as fp:
-	    fp.write("%s\tPRF%d,F1\t%4.2f\t%4.2f\t%4.2f\t%4.2f\t%s\n" % \
+	    fp.write("%s\tF%dPRNPV\t%6.4f\t%6.4f\t%6.4f\t%6.4f\t%s\n" % \
 	    (self.startTimeStr,
 	    compareBeta,
-	    precision_score(y_true, y_predicted, pos_label=self.yClassToScore),
-	    recall_score(   y_true, y_predicted, pos_label=self.yClassToScore),
 	    fbeta_score(    y_true, y_predicted, compareBeta,
 						pos_label=self.yClassToScore), 
-	    fbeta_score(    y_true, y_predicted, 1,
-						pos_label=self.yClassToScore), 
+	    precision_score(y_true, y_predicted, pos_label=self.yClassToScore),
+	    recall_score(   y_true, y_predicted, pos_label=self.yClassToScore),
+	    # negative predictive value:
+	    precision_score(y_true, y_predicted,pos_label=1-self.yClassToScore),
 	    tuningFile,
 	    ) )
     # ---------------------------
@@ -1102,10 +1102,16 @@ def getFormattedMetrics( \
 			target_names=target_names,
 			labels=rptClassMapping[:rptNum], )
 		    )
-    output += "%s F%d: %7.5f (%s)\n\n" % \
-	    (title[:5], beta,
-	    fbeta_score(y_true, y_predicted, beta, pos_label=yClassToScore),
+    output += "%s (%s) F%d: %6.4f    P: %6.4f    R: %6.4f    NPV: %6.4f\n\n" % \
+	    (
+	    title[:5],
 	    yClassNames[yClassToScore],
+	    beta,
+	    fbeta_score(y_true, y_predicted, beta, pos_label=yClassToScore),
+	    precision_score(y_true, y_predicted, pos_label=yClassToScore),
+	    recall_score(   y_true, y_predicted, pos_label=yClassToScore),
+	    # negative predictive value:
+	    precision_score(y_true, y_predicted, pos_label=1 - yClassToScore),
 	    )
     output += "%s\n" % getFormattedCM(y_true, y_predicted)
 
