@@ -33,8 +33,8 @@ def parseCmdLine():
 
     parser.add_argument('--sampletype', dest='sampleObjTypeName',
 	default=DEFAULT_SAMPLE_TYPE,
-	help="Sample class name in sampleDataLib. Default: %s" \
-						    % DEFAULT_SAMPLE_TYPE)
+	help="Sample class name to use if not specified in sample file. " +
+					    "Default: %s" % DEFAULT_SAMPLE_TYPE)
 
     parser.add_argument('--omitrejects', dest='omitRejects',
 	action='store_true', required=False,
@@ -70,7 +70,6 @@ def main():
         exit(5)
 
     sampleObjType = getattr(sampleDataLib, args.sampleObjTypeName)
-    verbose("Sample type '%s'\n" % args.sampleObjTypeName)
 
     verbose("Preprocessing steps: %s\n" % ' '.join(args.preprocessors)) 
     totNumSamples = 0
@@ -83,34 +82,23 @@ def main():
 	verbose("Preprocessing '%s'\n" % fn)
 	if fn == '-': fn = sys.stdin
 
-	numSamples = 0
-	numSkipped = 0
+	sampleSet = sampleDataLib.SampleSet(sampleObjType).read(fn)
 
-	sampleSet = sampleDataLib.SampleSet(sampleObjType)
-	sampleSet.read(fn)
+        if firstFile:
+            sampleObjType     = sampleSet.getSampleObjType()
+            verbose("Sample type: %s\n" % sampleObjType.__name__)
+        else:
+            if sampleObjType != sampleSet.getSampleObjType():
+                sys.stderr.write( \
+                    "Input files have inconsistent sample types: %s & %s\n" % \
+                    (sampleObjType.__name__,
+                    sampleSet.getSampleObjType().__name__) )
+                exit(5)
 
-	# save prev sample ID for printing if we get an exception.
-	# Gives us a fighting chance of finding the offending record
-	prevSampleName = 'very first sample'
-
-	for rcdnum, sample in enumerate(sampleSet.sampleIterator()):
-	    numSamples += 1
-	    try:
-		for pp in args.preprocessors:
-		    sample = getattr(sample, pp)()  # preproc method on sample
-
-		if args.omitRejects and sample.isReject():
-		    verbose( "%s, %s skipped\n" % \
-			    (sample.getRejectReason(), sample.getSampleName()) )
-		    numSkipped += 1
-		prevSampleName = sample.getSampleName()
-	    except:
-		sys.stderr.write("\nException in %s record %s prevID %s\n\n" % \
-				    (fn, rcdnum, prevSampleName))
-		raise
+	numSamples, numSkipped = preprocess(sampleSet, args.preprocessors)
 
 	sampleSet.write( sys.stdout, writeHeader=firstFile,
-						omitRejects=args.omitRejects )
+			    writeMeta=firstFile, omitRejects=args.omitRejects )
 	firstFile = False
 	totNumSamples += numSamples
 	totNumSkipped += numSkipped
@@ -119,6 +107,38 @@ def main():
     verbose("Samples processed: %d \t Samples skipped: %d\n" % \
 						(totNumSamples, totNumSkipped))
     verbose( "Total time: %8.3f seconds\n\n" % (time.time()-startTime))
+# ---------------------
+
+def preprocess(sampleSet,
+		preprocessors,	# list of preprocessor (method) names
+		):
+    """
+    Run the preprocessors on each sample in the sampleSet.
+    Return the number of samples processed and the number skipped
+    """
+    numSamples = 0
+    numSkipped = 0
+
+    # save prev sample ID for printing if we get an exception.
+    # Gives us a fighting chance of finding the offending record
+    prevSampleName = 'very first sample'
+
+    for rcdnum, sample in enumerate(sampleSet.sampleIterator()):
+	numSamples += 1
+	try:
+	    for pp in args.preprocessors:
+		sample = getattr(sample, pp)()  # run preproc method on sample
+
+	    if args.omitRejects and sample.isReject():
+		verbose( "%s, %s skipped\n" % \
+			(sample.getRejectReason(), sample.getSampleName()) )
+		numSkipped += 1
+	    prevSampleName = sample.getSampleName()
+	except:
+	    sys.stderr.write("\nException in record %s prevID %s\n\n" % \
+						    (rcdnum, prevSampleName))
+	    raise
+    return numSamples, numSkipped
 # ---------------------
 
 def verbose(text):

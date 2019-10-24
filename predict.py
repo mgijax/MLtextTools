@@ -41,8 +41,8 @@ def parseCmdLine():
 
     parser.add_argument('--sampletype', dest='sampleObjTypeName',
 	default=DEFAULT_SAMPLE_TYPE,
-	help="Sample class name in sampleDataLib. Default: %s" \
-							% DEFAULT_SAMPLE_TYPE)
+	help="Sample class name to use if not specified in sample file. " +
+					"Default: %s" % DEFAULT_SAMPLE_TYPE)
 
     parser.add_argument('--fieldsep', dest='outputFieldSep',
 	default=DEFAULT_OUTPUT_FIELDSEP,
@@ -79,7 +79,6 @@ def main():
 	exit(5)
 
     sampleObjType = getattr(sampleDataLib, args.sampleObjTypeName)
-    verbose("Sample type '%s'\n" % args.sampleObjTypeName)
 
     #####################
     verbose("Loading model '%s'\n" % args.model)
@@ -100,11 +99,13 @@ def main():
     sampleSet = sampleDataLib.SampleSet(sampleObjType)
 
     for fn in args.inputFiles:
-	verbose("Reading '%s'\n" % fn)
+	verbose("Reading '%s' ... " % fn)
 	if fn == '-': fn = sys.stdin
 
 	sampleSet.read(fn)
-    verbose("...done %d documents.\n" % sampleSet.getNumSamples())
+	verbose("Sample type '%s'\n" % sampleSet.getSampleObjType().__name__ )
+
+    verbose("...done %d total documents.\n" % sampleSet.getNumSamples())
 
     #####################
     if args.preprocessors:
