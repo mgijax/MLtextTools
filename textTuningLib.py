@@ -616,19 +616,26 @@ class TextPipelineTuningHelper (object):
     # ---------------------------
 
     def writePredictions(self,):
-	self.writePredictionsFile( self.outputFilePrefix + "_train_pred.txt",
-								self.trainSet)
+	self.writePredictionsFile(self.outputFilePrefix + "_train_pred.txt",
+				    self.trainSet,
+				    self.valSetEstimator)
 
-	self.writePredictionsFile( self.outputFilePrefix + "_val_pred.txt",
-								self.valSet)
+	self.writePredictionsFile(self.outputFilePrefix + "_val_pred.txt",
+				    self.valSet,
+				    self.valSetEstimator)
+
+	if self.testSet:
+	    self.writePredictionsFile(self.outputFilePrefix + "_test_pred.txt",
+				    self.testSet,
+				    self.testSetEstimator)
     # ---------------------------
 
-    def writePredictionsFile(self, outputFile, documentSet):
+    def writePredictionsFile(self, outputFile, documentSet, estimator):
 
 	if type(outputFile) == type(''): fp = open(outputFile, 'w')
 	else: fp = outputFile
 
-	formatter = PredictionFormatter(documentSet, self.valSetEstimator,
+	formatter = PredictionFormatter(documentSet, estimator,
 		classNames=self.yClassNames, positiveClass=self.yClassToScore)
 
 	fp.write(formatter.getHeaderText())
@@ -863,11 +870,11 @@ class PredictionFormatter (object):
     """
     outputFields = [		# field/column names & fmt in prediction output
 		{'fn' : 'ID'         , 'format':'%s'},
-		{'fn' : 'True Class' , 'format':'%s'},
 		{'fn' : 'Pred Class' , 'format':'%s'},
-		{'fn' : 'FP/FN'      , 'format':'%s'},
 		{'fn' : 'Confidence' , 'format':'%5.3f'},
 		{'fn' : 'Abs Value'  , 'format':'%5.3f'},
+		{'fn' : 'True Class' , 'format':'%s'},
+		{'fn' : 'FP/FN'      , 'format':'%s'},
 	    ]
     # ---------------------------
 
@@ -891,6 +898,7 @@ class PredictionFormatter (object):
 	extraInfo[]		- each item is a list of extra values
 				-  (strings) to output for the doc
 	"""
+	self.fieldSep = '|'
 	self.docSet = docSet
 	self.positiveClass = positiveClass
 
@@ -930,23 +938,23 @@ class PredictionFormatter (object):
 	self.absConf     = map(abs, self.confidences)
     # ---------------------------
 
-    def getHeaderText(self):	return '\t'.join(self.fieldNames) + '\n'
+    def getHeaderText(self):  return self.fieldSep.join(self.fieldNames) + '\n'
 
     def getNextPredictionText(self,):
 	"""
 	iterator over the predictions
 	"""
-	formatString = '\t'.join(self.formats) + '\n'
+	formatString = self.fieldSep.join(self.formats) + '\n'
 	sampleNames  = self.docSet.getSampleNames()
 	extraInfo    = self.docSet.getExtraInfo()
 
 	for i in range(len(sampleNames)):
 	    pred = [sampleNames[i],
-		    self.trueNames[i],
 		    self.predNames[i],
-		    self.predTypes[i],
 		    self.confidences[i],
-		    self.absConf[i]
+		    self.absConf[i],
+		    self.trueNames[i],
+		    self.predTypes[i],
 		    ]
 	    if extraInfo:
 		pred += extraInfo[i]

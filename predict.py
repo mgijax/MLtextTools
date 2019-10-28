@@ -52,9 +52,8 @@ def parseCmdLine():
 	dest='preprocessors', action='append', required=False, default=None,
 	help='preprocessor, multiples are applied in order. Default is none.' )
 
-    parser.add_argument('--long', dest='longFile', action='store',
-	required=False, default=None,
-    	help='(not implemented) also write long output to this file. Default: no long output')
+    parser.add_argument('--short', dest='noAddl', action='store_true',
+    	help='just write prediction & confidences, no addl info')
 
     parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
 	    required=False, help="skip helpful messages to stderr")
@@ -164,19 +163,61 @@ def writePredictions(model,
 		    predictedClasses,
 		    confidences,
 		    ):
+    # Trying to keep these output columns the same as PredictionFormatter
+    #   in textTuningLib.py. Should refactor these two pieces of code sometime
+
     fp = sys.stdout
-
-    # JIM: should we write more info? title? journal?
-    # long output not implemented yet
-    header = args.outputFieldSep.join(['ID', 'Prediction', 'Confidence'])
-    fp.write(header + '\n')
+    firstSample = True
     
-    for className, ID, confidence in \
-		zip(predictedClasses, sampleSet.getSampleIDs(), confidences):
-	l = args.outputFieldSep.join([str(ID), className, "%6.3f" % confidence])
-	fp.write(l + '\n')
+    for sample, className, confidence in \
+		zip(sampleSet.getSamples(), predictedClasses, confidences):
 
+	addlFields, addlFieldNames = getAddlFields(sample, className)
+
+	if firstSample:		# write header line
+	    header = args.outputFieldSep.join( \
+		[
+		'ID',
+		'Pred Class',
+		'Confidence',
+		'Abs Value',
+		] + addlFieldNames)
+	    fp.write(header + '\n')
+	    firstSample = False
+
+	l = args.outputFieldSep.join( \
+		[
+		sample.getID(),
+		className,
+		"%5.3f" % confidence,
+		"%5.3f" % abs(confidence),
+		] + addlFields)
+	fp.write(l + '\n')
     return
+# ---------------------------
+
+def getAddlFields(sample, predClass):
+    """
+    Return a list of any additional fields & the field names that should be
+    displayed for the sample.
+    """
+    if args.noAddl:  return [], []
+    values = []
+    header = []
+    if hasattr(sample, "getKnownClassName"):
+	knownClass = sample.getKnownClassName()
+	values.append(knownClass)
+	header.append('True Class')
+
+	posClass = sample.getClassNames()[sample.getY_positive()]
+	values.append(skHelper.predictionType(knownClass, predClass, posClass))
+	header.append('FP/FN')
+
+    if hasattr(sample, "getExtraInfoFieldNames"):
+	values += sample.getExtraInfo()
+	header += sample.getExtraInfoFieldNames()
+
+    return values, header
 # ---------------------------
 def verbose(text):
     if args.verbose:
