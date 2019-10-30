@@ -117,7 +117,7 @@ def getOrderedFeatures( vectorizer,     # fitted vectorizer from a pipeline
 # ---------------------------
 
 def getConfidenceValues(classifier,
-			samples,		# list of samples to be predicted
+			samples,		# list of samples to predict
 			positiveClass=1,	# value in y_ considered "pos"
 			):
     """
@@ -129,14 +129,14 @@ def getConfidenceValues(classifier,
 	confidences = classifier.decision_function(samples).tolist()
     elif classifier and hasattr(classifier, "predict_proba"):
 	confidences = getProbaConfidences(classifier, samples,
-							    positiveClass=positiveClass)
+						positiveClass=positiveClass)
     else:
 	confidences = None
     return confidences
 # ---------------------------
 
 def getProbaConfidences(classifier,
-			samples,		# list of samples to be predicted
+			samples,		# list of samples to predict
 			positiveClass=1		# value in y_ considered "pos"
 			):
     """
