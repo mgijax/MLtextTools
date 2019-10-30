@@ -199,13 +199,17 @@ def parseCmdLine():
 			default=TUNING_INDEX_FILE,
                         help='index file name. Default: %s' % \
 							TUNING_INDEX_FILE)
+    parser.add_argument('--nopredict', dest='wPredictions',
+			action='store_false', default=False,
+	    help="don't write validation & training set predictions (default)")
+
     parser.add_argument('-p', '--predict', dest='wPredictions',
 			action='store_true', default=False,
                         help='write predictions for validation & training sets')
 
-    parser.add_argument('--nopredict', dest='wPredictions',
-			action='store_false', default=False,
-	    help="don't write validation & training set predictions (default)")
+    parser.add_argument('--noconfidence', dest='doConfidences',
+			action='store_false',
+                        help="don't include confidence values w/ predictions")
 
     parser.add_argument('--outprefix', dest='outputFilePrefix', 
 			default=OUTPUT_FILE_PREFIX,
@@ -265,6 +269,7 @@ class TextPipelineTuningHelper (object):
 	self.tuningIndexFile    = args.tuningIndexFile
 	self.wIndex             = args.wIndex
 	self.wPredictions       = args.wPredictions
+	self.doConfidences	= args.doConfidences
 	self.outputFilePrefix   = args.outputFilePrefix
 	self.writeFeatures      = args.writeFeatures
 	self.modelFile		= args.modelFile
@@ -432,7 +437,7 @@ class TextPipelineTuningHelper (object):
 				self.pipelineParameters,
 				scoring= self.scorer,
 				cv=      cv,
-				refit=   True,
+				refit=   True,	# if false, no best_estimator_
 				verbose= self.gsVerbose,
 				n_jobs=  self.numJobs,
 				iid=True,
@@ -618,16 +623,16 @@ class TextPipelineTuningHelper (object):
     def writePredictions(self,):
 	self.writePredictionsFile(self.outputFilePrefix + "_train_pred.txt",
 				    self.trainSet,
-				    self.valSetEstimator)
+				    self.valSetEstimator,)
 
 	self.writePredictionsFile(self.outputFilePrefix + "_val_pred.txt",
 				    self.valSet,
-				    self.valSetEstimator)
+				    self.valSetEstimator,)
 
 	if self.testSet:
 	    self.writePredictionsFile(self.outputFilePrefix + "_test_pred.txt",
 				    self.testSet,
-				    self.testSetEstimator)
+				    self.testSetEstimator,)
     # ---------------------------
 
     def writePredictionsFile(self, outputFile, documentSet, estimator):
@@ -636,7 +641,8 @@ class TextPipelineTuningHelper (object):
 	else: fp = outputFile
 
 	formatter = PredictionFormatter(documentSet, estimator,
-		classNames=self.yClassNames, positiveClass=self.yClassToScore)
+		classNames=self.yClassNames, positiveClass=self.yClassToScore,
+		doConfidences=self.doConfidences)
 
 	fp.write(formatter.getHeaderText())
 	for line in formatter.getNextPredictionText():
@@ -817,6 +823,8 @@ class DocumentSet (object):
     def loadFromDir(self, path):
 	"""
 	Load from a directory using sklearn load_files()
+	NOTE I have not loaded documents this way in a long time, so this has
+	    not been tested
 	"""
 	dataSet          = load_files( path )
 	self.docs        = dataSet.data
@@ -832,8 +840,6 @@ class DocumentSet (object):
 	'''
 	Convert list of filenames into sampleNames:
 	    file basenames without any file extension.
-	If this conversion doesn't work for you, subclass and override
-	    this method.
 	'''
 	return [ os.path.splitext(os.path.basename(fn))[0] for fn in filenames ]
     # ---------------------------
@@ -884,6 +890,7 @@ class PredictionFormatter (object):
 		classNames=['no','yes'], # class labels
 		positiveClass=1,	# index in classNames considered the
 					#   positive class
+		doConfidences=1,	# Include confidence vals in predictions
 		):
 	"""
 	Assumes docSet already has predictions from docSet.setPredictions().
@@ -901,6 +908,7 @@ class PredictionFormatter (object):
 	self.fieldSep = '|'
 	self.docSet = docSet
 	self.positiveClass = positiveClass
+	self.doConfidences = doConfidences
 
 	y_true      = docSet.getYvalues()
 	y_predicted = docSet.getPredictions()
@@ -930,10 +938,13 @@ class PredictionFormatter (object):
 	"""
 	Compute "confidence" values (and abs value)
 	"""
-	self.confidences = skHelper.getConfidenceValues(pipeline,
-			    docSet.getDocs(), positiveClass=self.positiveClass)
-	if not self.confidences:
+	if not self.doConfidences:
 	    self.confidences = [ 0.0 for x in range(docSet.getNumDocs()) ]
+	else:
+	    self.confidences = skHelper.getConfidenceValues(pipeline,
+			    docSet.getDocs(), positiveClass=self.positiveClass)
+	    if not self.confidences:
+		self.confidences = [ 0.0 for x in range(docSet.getNumDocs()) ]
 
 	self.absConf     = map(abs, self.confidences)
     # ---------------------------
