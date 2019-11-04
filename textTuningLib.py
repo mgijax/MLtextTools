@@ -250,11 +250,13 @@ class TextPipelineTuningHelper (object):
 	pipeline,
 	pipelineParameters,
 	randomSeeds={'randForSplit':1},	# random seeds. Assume all are not None
+	note='',
 	):
 	self.pipeline           = pipeline
 	self.pipelineParameters = pipelineParameters
 	self.randomSeeds        = randomSeeds
 	self.randForSplit       = randomSeeds['randForSplit']	# required seed
+	self.note		= note
 
 	# JIM: the idea was that only this constructor accesses args,
 	#      but does it really make sense to copy all these to self. ?
@@ -550,6 +552,9 @@ class TextPipelineTuningHelper (object):
 				yClassNames=self.yClassNames,
 				yClassToScore=self.yClassToScore,
 				)
+	if self.note:
+	    output += SSTART + "Note: %s\n" % self.note
+
 	output += getBestParamsReport(self.bestParams, self.pipelineParameters)
 	output += getGridSearchReport(self.pipeline, self.pipelineParameters)
 
