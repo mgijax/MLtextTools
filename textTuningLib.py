@@ -126,6 +126,7 @@ import sklearnHelperLib as skHelper
 
 from sklearn.base import clone
 import numpy as np
+import pandas as pd
 from sklearn.datasets import load_files
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
@@ -384,8 +385,9 @@ class TextPipelineTuningHelper (object):
 		self.bestClassifier
 		self.featureEvaluator 	# (if any)
 		    self.featureValues  # (output of self.featureEvaluator)
+	    self.gridSearch		# or None if no grid search is run
 	    self.testSetEstimator     # Trained tr+val sets to predict test set
-				      # (if needed)
+				      # (None if not needed)
 	Subtleties:
 	    If there is only one pipelineParameters permutation, then using
 	    GridSearchCV() is very inefficient:
@@ -412,6 +414,7 @@ class TextPipelineTuningHelper (object):
 	    self.bestParams = skHelper.convertParamGrid(self.pipelineParameters)
 	    self.pipeline.set_params( **self.bestParams)
 
+	    self.gridSearch = None
 	    self.valSetEstimator = self.pipeline
 	    self.valSetEstimator.fit(self.trainSet.getDocs(),
 						    self.trainSet.getYvalues())
@@ -447,6 +450,7 @@ class TextPipelineTuningHelper (object):
 	    gs.fit( docs_gs, y_gs )
 	    self.verboseWrite("Done Gridsearch\n")
 
+	    self.gridSearch = gs
 	    self.bestParams = gs.best_params_
 
 	    # gs.best_estimator_ is Pipeline w/ best params evaluated on
@@ -483,16 +487,16 @@ class TextPipelineTuningHelper (object):
 	else: self.featureValues = self.featureEvaluator.getValues()
 
 	# run estimator on the training, val sets so we can compare
-	self.verboseWrite("Predicting on training set\n")
+	self.verboseWrite("Predicting training set using valSetEstimator\n")
 	self.trainSet.setPredictions( \
 		    self.valSetEstimator.predict(self.trainSet.getDocs()) )
 
-	self.verboseWrite("Predicting on validation set\n")
+	self.verboseWrite("Predicting validation set using valSetEstimator\n")
 	self.valSet.setPredictions( \
 		    self.valSetEstimator.predict(self.valSet.getDocs()) )
 
 	if self.testSet:		# run on test set too
-	    self.verboseWrite("Predicting on test set\n")
+	    self.verboseWrite("Predicting test set using testSetEstimator\n")
 	    self.testSet.setPredictions( \
 		    self.testSetEstimator.predict(self.testSet.getDocs()) )
 
@@ -555,8 +559,8 @@ class TextPipelineTuningHelper (object):
 	if self.note:
 	    output += SSTART + "Note: %s\n" % self.note
 
-	output += getBestParamsReport(self.bestParams, self.pipelineParameters)
-	output += getGridSearchReport(self.pipeline, self.pipelineParameters)
+	output += getBestParamsReport(self.bestParams, self.valSetEstimator)
+	output += getGridSearchReport(self.gridSearch, self.pipelineParameters)
 
 	if self.verbose: 
 	    features = skHelper.getOrderedFeatures( self.bestVectorizer,
@@ -1028,28 +1032,40 @@ def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
 
 def getBestParamsReport( \
     bestParams,	# dict parameter_names->(best) parameter values from GridSearch
-    parameters  # dict of parameters used in the gridsearch
+    pipeline,   # print the object for each step
     ):
     output = SSTART +'Best Pipeline Parameters:\n'
-    for pName in sorted(parameters.keys()):
+    for pName in sorted(bestParams.keys()):
 	output += "%s: %r\n" % ( pName, bestParams[pName] )
-
     output += "\n"
+
+    for stepName, obj in pipeline.named_steps.items():
+	output += "%s:\n%s\n\n" % (stepName, obj)
+    output += "\n"
+
     return output
 # ---------------------------
 
 def getGridSearchReport( \
-    pipeline,  	# Pipeline from a GridSearchCV that has been .fit()
+    gridSearch,	# fitted GridSearchCV object to report on
     parameters  # dict of parameters used in the GridSearchCV
     ):
-    output = SSTART + 'GridSearch Pipeline:\n'
-    for stepName, obj in pipeline.named_steps.items():
-	output += "%s:\n%s\n\n" % (stepName, obj)
+    if not gridSearch: return ''
 
-    output += SSTART + 'Parameter Options Tried:\n'
+    output = SSTART + 'Grid Search Parameter Options Tried:\n'
     for key in sorted(parameters.keys()):
 	output += "%s:%s\n" % (key, str(parameters[key])) 
+    output += "\n"
 
+    output += SSTART + 'Grid Search Scores:\n'
+    params           = gridSearch.cv_results_['params']
+    mean_test_scores = gridSearch.cv_results_['mean_test_score']
+    for i, p in enumerate(params):
+	output += str(p) + '\n'
+	output += "mean_test_score:  %f\n" % mean_test_scores[i]
+    output += "\n"
+
+    output += SSTART + 'Grid Search Best Score: %f\n' % gridSearch.best_score_
     output += "\n"
     return output
 # ---------------------------
