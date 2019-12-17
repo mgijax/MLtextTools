@@ -123,6 +123,7 @@ import argparse
 
 import utilsLib
 import sklearnHelperLib as skHelper
+import tuningReportsLib as trl
 
 from sklearn.base import clone
 import numpy as np
@@ -565,7 +566,7 @@ class TextPipelineTuningHelper (object):
 	if self.verbose: 
 	    features = skHelper.getOrderedFeatures( self.bestVectorizer,
 						    self.bestClassifier)
-	    output += getTopFeaturesReport( features, nTopFeatures) 
+	    output += trl.getTopFeaturesReport( features, nTopFeatures) 
 
 	    output += getVectorizerReport(self.bestVectorizer,
 					    nFeatures=nFeaturesReport)
@@ -1173,36 +1174,6 @@ def getFormattedCM( \
     output = "%s\n%s\n" % ( \
 	    str(rptClassNames),
 	    str(confusion_matrix(y_true, y_predicted, labels=rptClassMapping)))
-    return output
-#  ---------------------------
-
-def getTopFeaturesReport(  \
-    orderedFeatures,	# features: [ ('feature name', coef), ...]
-    num=20,		# number of features w/ highest & lowest coefs to rpt
-    ):
-    '''
-    Return report of the features w/ the highest (positive) and lowest
-    (negative) coefficients.
-    Assumes num < len(orderedFeatures).
-    '''
-    if not orderedFeatures:		# no coefs
-	output =  SSTART + "Feature weights: not available\n"
-	output += "\n"
-	return output
-
-    highest = orderedFeatures[:num]
-    lowest  = orderedFeatures[len(orderedFeatures)-num:]
-
-    output = SSTART + "Feature weights: highest %d\n" % len(highest)
-    for f,c in highest:
-	output += "%+5.4f\t%s\n" % (c,f)
-    output += "\n"
-
-    output += SSTART + "Feature weights: lowest %d\n" % len(lowest)
-    for f,c in lowest:
-	output += "%+5.4f\t%s\n" % (c,f)
-    output += "\n"
-
     return output
 # ---------------------------
 

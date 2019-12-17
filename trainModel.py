@@ -10,74 +10,163 @@
 #   also write a top weighted feature report after training.
 #
 import sys
+import os.path
 import argparse
 import pickle
 
-import textTuningLib as tl
-import sklearnHelperLib
-from sklearn.datasets import load_files
+import sklearnHelperLib as skHelper
+import utilsLib as ul
+import tuningReportsLib as trl
 from sklearn.pipeline import Pipeline
+
+# extend path up multiple parent dirs, hoping we can import sampleDataLib
+sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
+import sampleDataLib
+
 #-----------------------
 
 NUM_TOP_FEATURES=50	# number of highly weighted features to report
-GOOD_PIPELINE_FILE = "goodPipelines.py"
-PICKLE_FILE   = "goodModel.pkl"
-FEATURE_FILE = "goodModel.features"
+PIPELINE_FILE = "goodPipelines.py"
+OUTPUT_PICKLE_FILE   = "goodModel.pkl"
+DEFAULT_SAMPLE_TYPE = "ClassifiedSample"
 #-----------------------
 
 def parseCmdLine():
     parser = argparse.ArgumentParser( \
     description='Train a model and pickle it so it can be used to predict.')
 
-    parser.add_argument('-d', '--data', dest='trainingData',
-	    required=True, help='Directory where training data files live.')
+    parser.add_argument('inputFiles', nargs=argparse.REMAINDER,
+	help='files of samples or -, may be sklearn load_files dirs')
 
-    parser.add_argument('-p', '--pipeline', dest='pipelineFile',
-	    default=GOOD_PIPELINE_FILE,
-	    help='Python (input) file defining pipeline to train. Expects "pipelines" a Pipeline object or a list (trains the 0th). Default: "%s"'\
-		    % GOOD_PIPELINE_FILE)
+    parser.add_argument('-m', '--model', dest='pipelineFile',
+	default=PIPELINE_FILE,
+	help='Pipeline source (.py).' +
+	'Expects "pipeline" a Pipeline object or list (trains the 0th). ' +
+	'May be a Pipeline .pkl file. Default: %s' % PIPELINE_FILE)
 
-    parser.add_argument('-o', '--output', dest='pickleFile',
-	    default=PICKLE_FILE,
-	    help='output pickle file for trained model. Default: "%s"' \
-		    % PICKLE_FILE)
+    parser.add_argument('-p', '--preprocessor', metavar='PREPROCESSOR',
+	dest='preprocessors', action='append', required=False, default=None,
+	help='preprocessor, multiples are applied in order. Default is none.' )
 
-    parser.add_argument('-f', '--features', dest='featureFile',
-	    default=FEATURE_FILE,
-	    help='output file for top weighted features. Default: "%s"'\
-		    % FEATURE_FILE)
+    parser.add_argument('-o', '--output', dest='outputPklFile',
+	default=OUTPUT_PICKLE_FILE,
+	help='output pickle file for trained model. Default: "%s"' \
+		% OUTPUT_PICKLE_FILE)
+
+    parser.add_argument('-f', '--features', dest='featureFile', default=None,
+	help='output file for top weighted features. Default: None')
+
+    parser.add_argument('--numfeatures', dest='numTopFeatures',
+	type=int, default=NUM_TOP_FEATURES,
+	help='num of top weighted features to output. Default: %d' % \
+							    NUM_TOP_FEATURES)
+
+    parser.add_argument('--sampletype', dest='sampleObjTypeName',
+        default=DEFAULT_SAMPLE_TYPE,
+        help="Sample class name to use if not specified in sample file. " +
+                                        "Default: %s" % DEFAULT_SAMPLE_TYPE)
+
+    parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
+	default=True, help="include helpful messages to stdout, default")
+
+    parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
+	help="skip helpful messages to stdout")
 
     return parser.parse_args()
 #-----------------------
 
-def process():
-    args = parseCmdLine()
+args = parseCmdLine()
+#-----------------------
 
-    pyFile = args.pipelineFile
+def main():
 
-    pipeline = sklearnHelperLib.importPyFile(pyFile).pipelines
+    # get default sampleObjType
+    if not hasattr(sampleDataLib, args.sampleObjTypeName):
+        sys.stderr.write("invalid sample class name '%s'" \
+                                                    % args.sampleObjTypeName)
+        exit(5)
+    sampleObjType = getattr(sampleDataLib, args.sampleObjTypeName)
 
-    if type(pipeline) == type([]):
-        pipeline = pipeline[0]
+    pipeline = getPipeline()
+    trainSet = getTrainingSet(sampleObjType)
 
-    print "Training on data from '%s'" % args.trainingData
-    dataSet = load_files( args.trainingData )
-    pipeline.fit(dataSet.data, dataSet.target)	# train on all samples
+    if args.preprocessors:
+	verbose("Running preprocessors %s\n" % str(args.preprocessors))
+	rejects = trainSet.preprocess(args.preprocessors)
+	verbose("...done\n")
 
-    with open(args.pickleFile, 'wb') as fp:
+    verbose("Training...\n")
+    pipeline.fit(trainSet.getDocuments(), trainSet.getKnownYvalues())
+    verbose("Done\n")
+
+    with open(args.outputPklFile, 'wb') as fp:
 	pickle.dump(pipeline, fp)
-	print "Trained model written to '%s'" % args.pickleFile
+    verbose("Trained model written to '%s'\n" % args.outputPklFile)
 
-    # print features report
+    if args.featureFile:
+	writeFeaturesFile(pipeline, args.featureFile)
+#-----------------------
+
+def writeFeaturesFile(pipeline, fileName):
     vectorizer = pipeline.named_steps['vectorizer']
     classifier = pipeline.named_steps['classifier']
-    orderedFeatures = tl.getOrderedFeatures(vectorizer,classifier)
+    orderedFeatures = skHelper.getOrderedFeatures(vectorizer, classifier)
 
     if len(orderedFeatures) == 0: 
-	print "No feature weights/coefficients are available for this Pipeline"
+	verbose("No feature weights/coefs are available for this Pipeline\n")
     else:
-	fp = open(args.featureFile, 'w')
-	fp.write(tl.getTopFeaturesReport(orderedFeatures, NUM_TOP_FEATURES))
-	print "Top weighted features file written to '%s'" % args.featureFile
+	fp = open(fileName, 'w')
+	fp.write(trl.getTopFeaturesReport(orderedFeatures, args.numTopFeatures))
+	verbose("Top weighted features written to '%s'\n" % fileName)
 #-----------------------
-if __name__ == "__main__": process()
+
+def getTrainingSet(sampleObjType):
+    sampleSet = sampleDataLib.ClassifiedSampleSet(sampleObjType=sampleObjType)
+    for fn in args.inputFiles:
+	verbose("Reading '%s' ...\n" % fn)
+	if fn == '-': fn = sys.stdin
+
+	sampleSet.read(fn)
+	verbose("Sample type '%s'\n" % sampleSet.getSampleObjType().__name__ )
+
+    verbose("...done %d total documents.\n" % sampleSet.getNumSamples())
+    return sampleSet
+#-----------------------
+
+def getPipeline():
+    fileName = args.pipelineFile
+    ext = os.path.splitext(fileName)[1]
+    if ext == '.py':
+	verbose("Importing model source file '%s'\n" % fileName)
+	pipeline = ul.importPyFile(fileName).pipeline
+
+	if type(pipeline) == type([]):
+	    pipeline = pipeline[0]
+
+    elif ext == '.pkl':
+	verbose("Loading model '%s'\n" % fileName)
+	with open(fileName, 'rb') as fp:
+	    pipeline = pickle.load(fp)
+	verbose("...done\n")
+    else:
+	sys.stderr.write("Invalid model file extension: '%s'\n" % ext)
+	exit(5)
+
+    # JIM IS THIS NECESSARY?
+    # Some classifiers write process info to stdout messing up our
+    #   output.
+    # "classifier__verbose" assumes the model is a Pipeline
+    #   with a classifier step. This seems like a pretty safe
+    #   assumption, but if it turns out to be false, we'd
+    #   need more logic to figure out the name of the "verbose"
+    #   argument.
+    pipeline.set_params(classifier__verbose=0)
+
+    return pipeline
+#-----------------------
+def verbose(text):
+    if args.verbose:
+	sys.stdout.write(text)
+	sys.stdout.flush()
+#-----------------------
+if __name__ == "__main__": main()
