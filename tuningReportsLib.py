@@ -56,11 +56,12 @@ def getFormattedMetrics( \
             fbeta_score(y_true, y_predicted, beta, pos_label=yClassToScore),
             precision_score(y_true, y_predicted, pos_label=yClassToScore),
             recall_score(   y_true, y_predicted, pos_label=yClassToScore),
-            # negative predictive value:
+            # negative predictive value (NPV):
             precision_score(y_true, y_predicted, pos_label=1 - yClassToScore),
             )
-    output += "%s\n" % getFormattedCM(y_true, y_predicted)
-
+    output += "%s\n" % getFormattedCM(y_true, y_predicted,
+					rptClassNames=rptClassNames,
+					rptClassMapping=rptClassMapping)
     return output
 # ---------------------------
 
