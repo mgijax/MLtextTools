@@ -11,7 +11,8 @@ pipeline definition & parameter options to evaluate are in the tuning scripts.
 So the code here is coupled with TuningTemplate.py.
 
 A big part of this module is the implementation of various tuning
-reports used to analyze the tuning runs.
+reports used to analyze the tuning runs. Many of the formatting routines
+are in tuningReportsLib.py.
 
 Assumes:
 * Pipelines are for binary classification
@@ -131,8 +132,8 @@ import pandas as pd
 from sklearn.datasets import load_files
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import make_scorer, fbeta_score, precision_score,\
-			recall_score, classification_report, confusion_matrix
+from sklearn.metrics import make_scorer, fbeta_score, precision_score, \
+							    recall_score
 
 # extend path up multiple parent dirs, hoping we can import sampleDataLib
 sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] + \
@@ -288,7 +289,7 @@ class TextPipelineTuningHelper (object):
 	self.rptClassMapping    = args.rptClassMapping
 	self.rptNum             = args.rptNum
 
-	self.startTimeStr = getFormattedTime()
+	self.startTimeStr = trl.getFormattedTime()
 	self.startTime    = time.time()
 	self.scorer = make_scorer(fbeta_score, beta=self.gridSearchBeta,
 					  pos_label=self.yClassToScore)
@@ -508,7 +509,7 @@ class TextPipelineTuningHelper (object):
 
     def verboseWrite(self, msg):
 	if self.gsVerbose:
-	    sys.stderr.write(getFormattedTime() + " " + msg)
+	    sys.stderr.write(trl.getFormattedTime() + " " + msg)
 	    sys.stderr.flush()
     # ---------------------------
 
@@ -525,11 +526,11 @@ class TextPipelineTuningHelper (object):
 	    self.writeModel()
 	if self.writeFeatures:
 	    featureFile = self.outputFilePrefix + "_features.txt"
-	    writeFeatures(self.bestVectorizer, self.bestClassifier,
+	    trl.writeFeatures(self.bestVectorizer, self.bestClassifier,
 					 featureFile, values=self.featureValues)
 	output = self.getReportStart()
 
-	output += getFormattedMetrics("Training Set",
+	output += trl.getFormattedMetrics("Training Set",
 				self.trainSet.getYvalues(),
 				self.trainSet.getPredictions(),self.compareBeta,
 				rptClassNames=self.rptClassNames,
@@ -538,7 +539,7 @@ class TextPipelineTuningHelper (object):
 				yClassNames=self.yClassNames,
 				yClassToScore=self.yClassToScore,
 				)
-	output += getFormattedMetrics("Validation Set",
+	output += trl.getFormattedMetrics("Validation Set",
 				self.valSet.getYvalues(),
 				self.valSet.getPredictions(),self.compareBeta,
 				rptClassNames=self.rptClassNames,
@@ -548,7 +549,7 @@ class TextPipelineTuningHelper (object):
 				yClassToScore=self.yClassToScore,
 				)
 	if self.testSet:
-	    output += getFormattedMetrics("Test Set",
+	    output += trl.getFormattedMetrics("Test Set",
 				self.testSet.getYvalues(),
 				self.testSet.getPredictions(),self.compareBeta,
 				rptClassNames=self.rptClassNames,
@@ -560,15 +561,16 @@ class TextPipelineTuningHelper (object):
 	if self.note:
 	    output += SSTART + "Note: %s\n" % self.note
 
-	output += getBestParamsReport(self.bestParams, self.valSetEstimator)
-	output += getGridSearchReport(self.gridSearch, self.pipelineParameters)
+	output += trl.getBestParamsReport(self.bestParams, self.valSetEstimator)
+	output += trl.getGridSearchReport(self.gridSearch,
+							self.pipelineParameters)
 
 	if self.verbose: 
 	    features = skHelper.getOrderedFeatures( self.bestVectorizer,
 						    self.bestClassifier)
 	    output += trl.getTopFeaturesReport( features, nTopFeatures) 
 
-	    output += getVectorizerReport(self.bestVectorizer,
+	    output += trl.getVectorizerReport(self.bestVectorizer,
 					    nFeatures=nFeaturesReport)
 
 	    # false positives/negatives report.
@@ -578,7 +580,7 @@ class TextPipelineTuningHelper (object):
 					self.valSet.getSampleNames(),
 					positiveClass=self.yClassToScore)
 
-	    output += getFalsePosNegReport( "Validation set", falsePos,
+	    output += trl.getFalsePosNegReport( "Validation set", falsePos,
 					    falseNeg, num=nFalsePosNegReport)
 
 	    output += self.getSampleSummaryReport()
@@ -603,7 +605,7 @@ class TextPipelineTuningHelper (object):
 
     def getReportEnd(self):
 	return SSTART + "End Time %s. Total %9.2f seconds\n" % \
-	    (getFormattedTime(), time.time() - self.startTime)
+	    (trl.getFormattedTime(), time.time() - self.startTime)
     # ---------------------------
 
     def writeIndexFile(self, tuningIndexFile, compareBeta):
@@ -900,7 +902,7 @@ class PredictionFormatter (object):
 		classNames=['no','yes'], # class labels
 		positiveClass=1,	# index in classNames considered the
 					#   positive class
-		doConfidences=1,	# Include confidence vals in predictions
+		doConfidences=True,	# Include confidence vals in predictions
 		):
 	"""
 	Assumes docSet already has predictions from docSet.setPredictions().
@@ -982,205 +984,6 @@ class PredictionFormatter (object):
 
 	    yield formatString % tuple(pred)
 # end class PredictionFormatter ---------------------------
-
-############################################################
-# Functions to format output reports and other things.
-# These are functions that concievably could be useful outside on their own.
-# SO these do not use args or config variables defined above.
-############################################################
-
-def writeFeatures( vectorizer,	# fitted vectorizer from a pipeline
-		    classifier,	# fitted classifier from the pipeline
-		    outputFile,	# filename (string) or file obj (e.g., stdout)
-		    values=None,# list of feature values, one for each feature
-				# This is some number per feature based on
-				#   analysis of the features. Typical example:
-				#   number of documents each feature appears in
-				#   (but could be anything)
-				# Values are printed with %d. This could
-				#  become a problem....
-    ):
-    '''
-    Write the full list of feature names to the file
-    if values = [ ], should be numeric list parallel to feature names
-	we will print these after the feature name
-    if classifier can provide feature coefficients, we will print these too
-    All "|" delimited.
-    Assumes:  vectorizer has get_feature_names() method
-    '''
-    delimiter = '|'
-    featureNames = vectorizer.get_feature_names()
-
-    hasValues = values != None
-
-    hasCoef = hasattr(classifier, 'coef_')
-    if hasCoef: coefficients = classifier.coef_[0].tolist()
-
-    hasImportance = hasattr(classifier, 'feature_importances_')
-    if hasImportance: importances = classifier.feature_importances_.tolist()
-
-    if type(outputFile) == type(''): fp = open(outputFile, 'w')
-    else: fp = outputFile
-
-    for i,f in enumerate(featureNames):
-	fp.write(f)
-	if hasValues:     fp.write(delimiter + '%d' % values[i])
-	if hasCoef:       fp.write(delimiter + '%+5.4f' % coefficients[i])
-	if hasImportance: fp.write(delimiter + '%+5.4f' % importances[i])
-	fp.write('\n')
-    return 
-# ----------------------------
-
-def getBestParamsReport( \
-    bestParams,	# dict parameter_names->(best) parameter values from GridSearch
-    pipeline,   # print the object for each step
-    ):
-    output = SSTART +'Best Pipeline Parameters:\n'
-    for pName in sorted(bestParams.keys()):
-	output += "%s: %r\n" % ( pName, bestParams[pName] )
-    output += "\n"
-
-    for stepName, obj in pipeline.named_steps.items():
-	output += "%s:\n%s\n\n" % (stepName, obj)
-    output += "\n"
-
-    return output
-# ---------------------------
-
-def getGridSearchReport( \
-    gridSearch,	# fitted GridSearchCV object to report on
-    parameters  # dict of parameters used in the GridSearchCV
-    ):
-    if not gridSearch: return ''
-
-    output = SSTART + 'Grid Search Parameter Options Tried:\n'
-    for key in sorted(parameters.keys()):
-	output += "%s:%s\n" % (key, str(parameters[key])) 
-    output += "\n"
-
-    output += SSTART + 'Grid Search Scores:\n'
-    params           = gridSearch.cv_results_['params']
-    mean_test_scores = gridSearch.cv_results_['mean_test_score']
-    for i, p in enumerate(params):
-	output += str(p) + '\n'
-	output += "mean_test_score:  %f\n" % mean_test_scores[i]
-    output += "\n"
-
-    output += SSTART + 'Grid Search Best Score: %f\n' % gridSearch.best_score_
-    output += "\n"
-    return output
-# ---------------------------
-
-def getVectorizerReport(vectorizer, nFeatures=10):
-    '''
-    Format a report on a fitted vectorizer, return string
-    '''
-    featureNames = vectorizer.get_feature_names()
-    midFeature   = len(featureNames)/2
-
-    output =  SSTART + "Vectorizer:   Number of Features: %d\n" \
-    						% len(featureNames)
-    output += "First %d features: %s\n\n" % (nFeatures,
-		format(featureNames[:nFeatures]) )
-    output += "Middle %d features: %s\n\n" % (nFeatures,
-		format(featureNames[ midFeature : midFeature+nFeatures]) )
-    output += "Last %d features: %s\n\n" % (nFeatures,
-		format(featureNames[-nFeatures:]) )
-    return output
-# ---------------------------
-
-def getFalsePosNegReport( \
-	title,		# string title, typically  "Train" or "Validation"
-	falsePositives,	# list of (sample names) of the falsePositives
-	falseNegatives,	# ... 
-	num=5		# number of false pos/negs to display
-	):
-    '''
-    Report on the false positives and false negatives in a validation set
-    '''
-
-    output = SSTART+"False positives for %s: %d\n" % (title,len(falsePositives))
-    for name in falsePositives[:num]:
-	output += "%s\n" % name
-
-    output += "\n"
-    output += SSTART+"False negatives for %s: %d\n" %(title,len(falseNegatives))
-    for name in falseNegatives[:num]:
-	output += "%s\n" % name
-
-    output += "\n"
-    return output
-# ---------------------------
-
-def getFormattedMetrics( \
-	title,		# string title, typically  "Train" or "Test"
-	y_true,		# true category assignments
-	y_predicted,	# predicted assignments
-	beta,		# for the fbeta_score
-	rptClassNames=['yes', 'no'],
-			# class labels for report outputs, in desired order
-	rptClassMapping=[1,0],
-			# rptClassMapping[y_val] = corresp name in rptClassNames
-	rptNum=1,	# num classes to show in classification_report
-			#   will be the 1st rptNum names in rptClassNames
-	yClassNames=['no', 'yes'],
-			# class labels for the actual y_values
-	yClassToScore=1	# index of actual class in yClassNames to score
-	):
-    '''
-    Return formated metrics report for a set of predictions.
-    y_true and y_predicted are lists of integer category indexes (y_vals).
-    Assumes we are using a fbeta score, not a good thing in the long term
-    '''
-    # concat title string onto all the target class names so
-    #  they are easier to differentiate in multiple reports (and you can
-    #  grep for them)
-    target_names = [ "%s %s" % (title[:5], x) for x in rptClassNames ]
-
-    output = SSTART + "Metrics: %s\n" % title
-    output += "%s\n" % (classification_report( \
-			y_true, y_predicted,
-			target_names=target_names,
-			labels=rptClassMapping[:rptNum], )
-		    )
-    output += "%s (%s) F%d: %6.4f    P: %6.4f    R: %6.4f    NPV: %6.4f\n\n" % \
-	    (
-	    title[:5],
-	    yClassNames[yClassToScore],
-	    beta,
-	    fbeta_score(y_true, y_predicted, beta, pos_label=yClassToScore),
-	    precision_score(y_true, y_predicted, pos_label=yClassToScore),
-	    recall_score(   y_true, y_predicted, pos_label=yClassToScore),
-	    # negative predictive value:
-	    precision_score(y_true, y_predicted, pos_label=1 - yClassToScore),
-	    )
-    output += "%s\n" % getFormattedCM(y_true, y_predicted)
-
-    return output
-# ---------------------------
-
-def getFormattedCM( \
-    y_true,		# true category assignments 
-    y_predicted,	# predicted assignments
-    rptClassNames=['yes', 'no'],
-		    # class labels for report outputs, in desired order
-    rptClassMapping=[1,0],
-		    # rptClassMapping[y_val] = corresp name in rptClassNames
-    ):
-    '''
-    Return (minorly) formated confusion matrix
-    FIXME: this could be greatly improved
-    '''
-    output = "%s\n%s\n" % ( \
-	    str(rptClassNames),
-	    str(confusion_matrix(y_true, y_predicted, labels=rptClassMapping)))
-    return output
-# ---------------------------
-
-def getFormattedTime():
-    return time.strftime("%Y/%m/%d-%H-%M-%S")
-# ---------------------------
-
 
 ############################################################
 # Random seed support:
