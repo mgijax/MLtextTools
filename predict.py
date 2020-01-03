@@ -20,6 +20,7 @@ import string
 import pickle
 import argparse
 import sklearnHelperLib as skHelper
+import tuningReportsLib as trl
 
 # extend path up multiple parent dirs, hoping we can import sampleDataLib
 sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
@@ -53,7 +54,15 @@ def parseCmdLine():
 
     parser.add_argument('--noconfidence', dest='noConfidence',
 	action='store_true',
-    	help='just write prediction & confidences, no addl info')
+    	help='skip computation of prediction confidences')
+
+    parser.add_argument('--performance', dest='performanceFile', action='store',
+	default='',
+    	help='write performance metrics/info to this file, - for stdout. ' +
+		'Only makes sense if inputs are already classified')
+
+    parser.add_argument('--beta', dest='beta', default=2, type=int, 
+	help="beta for f-score in performance metrics. Default: 2")
 
     parser.add_argument('--fieldsep', dest='outputFieldSep',
 	default=DEFAULT_OUTPUT_FIELDSEP,
@@ -102,6 +111,46 @@ def main():
     confidences = getConfidences(model, sampleSet)
 
     writePredictions(model, sampleSet, predictedClasses, confidences)
+
+    writePerformance(sampleSet, y_predicted)
+# ---------------------------
+
+def writePerformance(sampleSet, y_predicted):
+    """
+    if there is a performanceFile to write to, assume this sampleSet must be
+    classified already and write metrics etc. compariing the predicted classes
+    to the known classes.
+    """
+    if not args.performanceFile: return
+
+    # organize report so positive class is listed first
+    classNames = sampleSet.getSampleClassNames()
+    rptClassNames   = [ classNames[sampleSet.getY_positive()],
+			classNames[sampleSet.getY_negative()] ]
+    rptClassMapping = [sampleSet.getY_positive(), sampleSet.getY_negative()]
+
+    if args.performanceFile == '-': fp = sys.stdout
+    else: fp = open(args.performanceFile, 'w')
+
+    output = trl.getFormattedMetrics("Preds",
+			    sampleSet.getKnownYvalues(),
+			    y_predicted,
+			    args.beta,
+			    rptClassNames=rptClassNames,
+			    rptClassMapping=rptClassMapping,
+			    rptNum=2,		# report both classes
+			    yClassNames=classNames,
+			    yClassToScore=sampleSet.getY_positive(),
+			    )
+    # false positives/negatives report.
+    falsePos,falseNeg = skHelper.getFalsePosNeg( \
+				sampleSet.getKnownYvalues(),
+				y_predicted,
+				sampleSet.getSampleIDs(),
+				positiveClass=sampleSet.getY_positive())
+
+    output += trl.getFalsePosNegReport( "Preds", falsePos, falseNeg, num=10)
+    fp.write(output)
 # ---------------------------
 
 def getConfidences(model, sampleSet):
@@ -124,7 +173,11 @@ def getConfidences(model, sampleSet):
 # ---------------------------
 
 def getSampleSet(sampleObjType):
-    sampleSet = sampleDataLib.SampleSet(sampleObjType)
+    if args.performanceFile: 	# to compute performance, should be classified
+	sampleSet = sampleDataLib.ClassifiedSampleSet(sampleObjType)
+    else:
+	sampleSet = sampleDataLib.SampleSet(sampleObjType)
+
     for fn in args.inputFiles:
 	verbose("Reading '%s' ...\n" % fn)
 	if fn == '-': fn = sys.stdin
