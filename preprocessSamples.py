@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7 
+#!/usr/bin/env python3 
 #
 # Takes one or more input files of samples and applies various preprocessors
 #   to the samples, and writes preprocessed samples to stdout
@@ -23,7 +23,7 @@ import sklearnHelperLib as skHelper
 
 # extend path up multiple parent dirs, hoping we can import sampleDataLib
 sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] + \
-		sys.path
+                sys.path
 import sampleDataLib
 
 DEFAULT_SAMPLE_TYPE  = "BaseSample"
@@ -37,12 +37,12 @@ def parseCmdLine():
     	help='files of samples, "-" for stdin')
 
     parser.add_argument('-p', '--preprocessor', metavar='PREPROCESSOR',
-	dest='preprocessors', action='append', required=False, default=[],
-	help='preprocessor, multiples are applied in order. Default is none.' )
+        dest='preprocessors', action='append', required=False, default=[],
+        help='preprocessor, multiples are applied in order. Default is none.' )
 
     parser.add_argument('--omitrejects', dest='omitRejects',
-	action='store_true', 
-	help="don't write reject samples, default is write")
+        action='store_true', 
+        help="don't write reject samples, default is write")
 
     parser.add_argument('--sampletype', dest='sampleObjTypeName',
         default=DEFAULT_SAMPLE_TYPE,
@@ -53,7 +53,7 @@ def parseCmdLine():
         default=True, help="include helpful messages to stderr, default")
 
     parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
-	required=False, help="skip helpful messages to stderr")
+        required=False, help="skip helpful messages to stderr")
 
     return parser.parse_args()
 #----------------------
@@ -78,10 +78,10 @@ def main():
 
     for fn in args.inputFiles:
 
-	verbose("Preprocessing '%s'\n" % fn)
-	if fn == '-': fn = sys.stdin
+        verbose("Preprocessing '%s'\n" % fn)
+        if fn == '-': fn = sys.stdin
 
-	sampleSet = sampleDataLib.SampleSet(sampleObjType).read(fn)
+        sampleSet = sampleDataLib.SampleSet(sampleObjType).read(fn)
 
         if firstFile:
             sampleObjType     = sampleSet.getSampleObjType()
@@ -94,27 +94,27 @@ def main():
                     sampleSet.getSampleObjType().__name__) )
                 exit(5)
 
-	rejected = sampleSet.preprocess(args.preprocessors)
+        rejected = sampleSet.preprocess(args.preprocessors)
 
-	sampleSet.write(sys.stdout, writeHeader=firstFile,
-			    writeMeta=firstFile, omitRejects=args.omitRejects)
-	firstFile = False
-	numSamples = sampleSet.getNumSamples()
-	numRejects = len(rejected)
-	totNumSamples += numSamples
-	totNumRejects += numRejects
-	verbose('...done. %d samples, %d marked as reject\n' % \
-						    (numSamples, numRejects))
+        sampleSet.write(sys.stdout, writeHeader=firstFile,
+                            writeMeta=firstFile, omitRejects=args.omitRejects)
+        firstFile = False
+        numSamples = sampleSet.getNumSamples()
+        numRejects = len(rejected)
+        totNumSamples += numSamples
+        totNumRejects += numRejects
+        verbose('...done. %d samples, %d marked as reject\n' % \
+                                                    (numSamples, numRejects))
 
     if args.omitRejects: numWritten = totNumSamples - totNumRejects
     else: numWritten = totNumSamples
     verbose("Samples read: %d \t Samples written: %d\n" % \
-						(totNumSamples, numWritten))
+                                                (totNumSamples, numWritten))
     verbose( "Total time: %8.3f seconds\n\n" % (time.time()-startTime))
 # ---------------------
 def verbose(text):
     if args.verbose:
-	sys.stderr.write(text)
-	sys.stderr.flush()
+        sys.stderr.write(text)
+        sys.stderr.flush()
 # ---------------------
 if __name__ == "__main__": main()

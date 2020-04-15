@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 Routines for reporting information about the performance & tuning of models
 and Pipelines.
@@ -22,13 +22,13 @@ def getFormattedMetrics( \
     y_predicted,    # predicted assignments
     beta,           # for the fbeta_score
     rptClassNames=['yes', 'no'],
-		    # class labels for report outputs, in desired order
+                    # class labels for report outputs, in desired order
     rptClassMapping=[1,0],
-		    # rptClassMapping[y_val] = corresp name in rptClassNames
+                    # rptClassMapping[y_val] = corresp name in rptClassNames
     rptNum=1,       # num classes to show in classification_report
-		    #   will be the 1st rptNum names in rptClassNames
+                    #   will be the 1st rptNum names in rptClassNames
     yClassNames=['no', 'yes'],
-		    # class labels for the actual y_values
+                    # class labels for the actual y_values
     yClassToScore=1,# index of actual class in yClassNames to score
     sstart=SSTART,  # output section start delimiter
     ):
@@ -60,8 +60,8 @@ def getFormattedMetrics( \
             precision_score(y_true, y_predicted, pos_label=1 - yClassToScore),
             )
     output += "%s\n" % getFormattedCM(y_true, y_predicted,
-					rptClassNames=rptClassNames,
-					rptClassMapping=rptClassMapping)
+                                        rptClassNames=rptClassNames,
+                                        rptClassMapping=rptClassMapping)
     return output
 # ---------------------------
 
@@ -188,14 +188,14 @@ def getTopFeaturesReport(  \
 # ---------------------------
 
 def getVectorizerReport(vectorizer,
-			nFeatures=10,
-			sstart=SSTART,	# output section start delimiter
+                        nFeatures=10,
+                        sstart=SSTART,	# output section start delimiter
     ):
     '''
     Return report (string) on the fitted vectorizer
     '''
     featureNames = vectorizer.get_feature_names()
-    midFeature   = len(featureNames)/2
+    midFeature   = int(len(featureNames)/2)
 
     output =  sstart + "Vectorizer:   Number of Features: %d\n" \
                                                 % len(featureNames)
@@ -256,4 +256,4 @@ def getFormattedTime():
 if __name__ == "__main__":
     # ad hoc test code
     if False:    # no tests yet
-	pass
+        pass

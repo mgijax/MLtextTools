@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 # Some helpful utilities
 """
@@ -6,7 +6,7 @@ import sys
 import os.path
 import re
 import string
-import ConfigParser
+import configparser
 
 #-----------------------------------
 
@@ -18,7 +18,7 @@ def getConfig(fileList=[]):
     over the standard parent directory list.
     (later files in fileList take precedence)
     """
-    cp = ConfigParser.ConfigParser()
+    cp = configparser.ConfigParser()
     cp.optionxform = str # make keys case sensitive
 
     # generate a path up multiple parent directories to search for config file

@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7 
+#!/usr/bin/env python3 
 #
 # Script to take a samples and predict them using a trained model
 #
@@ -36,48 +36,48 @@ DEFAULT_OUTPUT_FIELDSEP  = "|"
 
 def parseCmdLine():
     parser = argparse.ArgumentParser( \
-		description='predict samples. Write predictions to stdout')
+                description='predict samples. Write predictions to stdout')
 
     parser.add_argument('inputFiles', nargs=argparse.REMAINDER,
-	help='files of samples or -')
+        help='files of samples or -')
 
     parser.add_argument('-m', '--model', dest='pipelineFile', action='store',
-	default=PIPELINE_FILE,
+        default=PIPELINE_FILE,
     	help='trained model pkl file. Default: %s' % PIPELINE_FILE)
 
     parser.add_argument('-p', '--preprocessor', metavar='PREPROCESSOR',
-	dest='preprocessors', action='append', required=False, default=None,
-	help='preprocessor, multiples are applied in order. Default is none.' )
+        dest='preprocessors', action='append', required=False, default=None,
+        help='preprocessor, multiples are applied in order. Default is none.' )
 
     parser.add_argument('--short', dest='noAddl', action='store_true',
     	help='just write prediction & confidences, no addl info')
 
     parser.add_argument('--noconfidence', dest='noConfidence',
-	action='store_true',
+        action='store_true',
     	help='skip computation of prediction confidences')
 
     parser.add_argument('--performance', dest='performanceFile', action='store',
-	default='',
+        default='',
     	help='write performance metrics/info to this file, - for stdout. ' +
-		'Only makes sense if inputs are already classified')
+                'Only makes sense if inputs are already classified')
 
     parser.add_argument('--beta', dest='beta', default=2, type=int, 
-	help="beta for f-score in performance metrics. Default: 2")
+        help="beta for f-score in performance metrics. Default: 2")
 
     parser.add_argument('--fieldsep', dest='outputFieldSep',
-	default=DEFAULT_OUTPUT_FIELDSEP,
-	help="prediction output field separator. Default: '%s'" \
-						    % DEFAULT_OUTPUT_FIELDSEP)
+        default=DEFAULT_OUTPUT_FIELDSEP,
+        help="prediction output field separator. Default: '%s'" \
+                                                    % DEFAULT_OUTPUT_FIELDSEP)
     parser.add_argument('--sampletype', dest='sampleObjTypeName',
-	default=DEFAULT_SAMPLE_TYPE,
-	help="Sample class name to use if not specified in sample file. " +
-					"Default: %s" % DEFAULT_SAMPLE_TYPE)
+        default=DEFAULT_SAMPLE_TYPE,
+        help="Sample class name to use if not specified in sample file. " +
+                                        "Default: %s" % DEFAULT_SAMPLE_TYPE)
 
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
-	default=True, help="include helpful messages to stderr, default")
+        default=True, help="include helpful messages to stderr, default")
 
     parser.add_argument('-q', '--quiet', dest='verbose', action='store_false',
-	help="skip helpful messages to stderr")
+        help="skip helpful messages to stderr")
 
     return parser.parse_args()
 #----------------------
@@ -89,18 +89,18 @@ def main():
 
     # get default sampleObjType
     if not hasattr(sampleDataLib, args.sampleObjTypeName):
-	sys.stderr.write("invalid sample class name '%s'" \
-						    % args.sampleObjTypeName)
-	exit(5)
+        sys.stderr.write("invalid sample class name '%s'" \
+                                                    % args.sampleObjTypeName)
+        exit(5)
     sampleObjType = getattr(sampleDataLib, args.sampleObjTypeName)
 
     model = getPipeline()
     sampleSet = getSampleSet(sampleObjType)
 
     if args.preprocessors:
-	verbose("Running preprocessors %s\n" % str(args.preprocessors))
-	rejects = sampleSet.preprocess(args.preprocessors)
-	verbose("...done\n")
+        verbose("Running preprocessors %s\n" % str(args.preprocessors))
+        rejects = sampleSet.preprocess(args.preprocessors)
+        verbose("...done\n")
 
     verbose("Predicting\n")
     y_predicted = model.predict(sampleSet.getDocuments(),)
@@ -126,28 +126,28 @@ def writePerformance(sampleSet, y_predicted):
     # organize report so positive class is listed first
     classNames = sampleSet.getSampleClassNames()
     rptClassNames   = [ classNames[sampleSet.getY_positive()],
-			classNames[sampleSet.getY_negative()] ]
+                        classNames[sampleSet.getY_negative()] ]
     rptClassMapping = [sampleSet.getY_positive(), sampleSet.getY_negative()]
 
     if args.performanceFile == '-': fp = sys.stdout
     else: fp = open(args.performanceFile, 'w')
 
     output = trl.getFormattedMetrics("Preds",
-			    sampleSet.getKnownYvalues(),
-			    y_predicted,
-			    args.beta,
-			    rptClassNames=rptClassNames,
-			    rptClassMapping=rptClassMapping,
-			    rptNum=2,		# report both classes
-			    yClassNames=classNames,
-			    yClassToScore=sampleSet.getY_positive(),
-			    )
+                            sampleSet.getKnownYvalues(),
+                            y_predicted,
+                            args.beta,
+                            rptClassNames=rptClassNames,
+                            rptClassMapping=rptClassMapping,
+                            rptNum=2,		# report both classes
+                            yClassNames=classNames,
+                            yClassToScore=sampleSet.getY_positive(),
+                            )
     # false positives/negatives report.
     falsePos,falseNeg = skHelper.getFalsePosNeg( \
-				sampleSet.getKnownYvalues(),
-				y_predicted,
-				sampleSet.getSampleIDs(),
-				positiveClass=sampleSet.getY_positive())
+                                sampleSet.getKnownYvalues(),
+                                y_predicted,
+                                sampleSet.getSampleIDs(),
+                                positiveClass=sampleSet.getY_positive())
 
     output += trl.getFalsePosNegReport( "Preds", falsePos, falseNeg, num=10)
     fp.write(output)
@@ -159,31 +159,31 @@ def getConfidences(model, sampleSet):
     One confidence for each sample.
     """
     if args.noConfidence:
-	return [ 0.0 for x in range(sampleSet.getNumSamples()) ]
+        return [ 0.0 for x in range(sampleSet.getNumSamples()) ]
 
     verbose("Getting prediction confidence values\n")
     confidences = skHelper.getConfidenceValues(model,
-			sampleSet.getDocuments(),
-			positiveClass=sampleSet.getY_positive(),)
+                        sampleSet.getDocuments(),
+                        positiveClass=sampleSet.getY_positive(),)
     if not confidences:
-	verbose("no confidence values available for this model\n")
-	confidences = [ 0.0 for x in range(sampleSet.getNumSamples()) ]
+        verbose("no confidence values available for this model\n")
+        confidences = [ 0.0 for x in range(sampleSet.getNumSamples()) ]
     verbose("...done\n")
     return confidences
 # ---------------------------
 
 def getSampleSet(sampleObjType):
     if args.performanceFile: 	# to compute performance, should be classified
-	sampleSet = sampleDataLib.ClassifiedSampleSet(sampleObjType)
+        sampleSet = sampleDataLib.ClassifiedSampleSet(sampleObjType)
     else:
-	sampleSet = sampleDataLib.SampleSet(sampleObjType)
+        sampleSet = sampleDataLib.SampleSet(sampleObjType)
 
     for fn in args.inputFiles:
-	verbose("Reading '%s' ...\n" % fn)
-	if fn == '-': fn = sys.stdin
+        verbose("Reading '%s' ...\n" % fn)
+        if fn == '-': fn = sys.stdin
 
-	sampleSet.read(fn)
-	verbose("Sample type '%s'\n" % sampleSet.getSampleObjType().__name__ )
+        sampleSet.read(fn)
+        verbose("Sample type '%s'\n" % sampleSet.getSampleObjType().__name__ )
 
     verbose("...done %d total documents.\n" % sampleSet.getNumSamples())
     return sampleSet
@@ -192,25 +192,25 @@ def getSampleSet(sampleObjType):
 def getPipeline():
     verbose("Loading model '%s'\n" % args.pipelineFile)
     with open(args.pipelineFile, 'rb') as fp:
-	model = pickle.load(fp)
+        model = pickle.load(fp)
 
-		# Some classifiers write process info to stdout messing up our
-		#   output.
-		# "classifier__verbose" assumes the model is a Pipeline
-		#   with a classifier step. This seems like a pretty safe
-		#   assumption, but if it turns out to be false, we'd
-		#   need more logic to figure out the name of the "verbose"
-		#   argument.
+                # Some classifiers write process info to stdout messing up our
+                #   output.
+                # "classifier__verbose" assumes the model is a Pipeline
+                #   with a classifier step. This seems like a pretty safe
+                #   assumption, but if it turns out to be false, we'd
+                #   need more logic to figure out the name of the "verbose"
+                #   argument.
     model.set_params(classifier__verbose=0)
     verbose("...done\n")
     return model
 # ---------------------------
 
 def writePredictions(model,
-		    sampleSet,
-		    predictedClasses,
-		    confidences,
-		    ):
+                    sampleSet,
+                    predictedClasses,
+                    confidences,
+                    ):
     # Trying to keep these output columns the same as PredictionFormatter
     #   in textTuningLib.py. Might refactor these two pieces of code sometime
 
@@ -219,29 +219,29 @@ def writePredictions(model,
     firstSample = True
     
     for sample, className, confidence in \
-		zip(sampleSet.getSamples(), predictedClasses, confidences):
+                zip(sampleSet.getSamples(), predictedClasses, confidences):
 
-	addlFields, addlFieldNames = getAddlFields(sample, className)
+        addlFields, addlFieldNames = getAddlFields(sample, className)
 
-	if firstSample:		# write header line
-	    header = args.outputFieldSep.join( \
-		[
-		'ID',
-		'Pred Class',
-		'Confidence',
-		'Abs Value',
-		] + addlFieldNames)
-	    fp.write(header + '\n')
-	    firstSample = False
+        if firstSample:		# write header line
+            header = args.outputFieldSep.join( \
+                [
+                'ID',
+                'Pred Class',
+                'Confidence',
+                'Abs Value',
+                ] + addlFieldNames)
+            fp.write(header + '\n')
+            firstSample = False
 
-	l = args.outputFieldSep.join( \
-		[
-		sample.getID(),
-		className,
-		"%5.3f" % confidence,
-		"%5.3f" % abs(confidence),
-		] + addlFields)
-	fp.write(l + '\n')
+        l = args.outputFieldSep.join( \
+                [
+                sample.getID(),
+                className,
+                "%5.3f" % confidence,
+                "%5.3f" % abs(confidence),
+                ] + addlFields)
+        fp.write(l + '\n')
     verbose("...done\n")
     return
 # ---------------------------
@@ -254,23 +254,23 @@ def getAddlFields(sample, predClass):
     values = []
     header = []
     if hasattr(sample, "getKnownClassName"):
-	knownClass = sample.getKnownClassName()
-	values.append(knownClass)
-	header.append('True Class')
+        knownClass = sample.getKnownClassName()
+        values.append(knownClass)
+        header.append('True Class')
 
-	posClass = sample.getClassNames()[sample.getY_positive()]
-	values.append(skHelper.predictionType(knownClass, predClass, posClass))
-	header.append('FP/FN')
+        posClass = sample.getClassNames()[sample.getY_positive()]
+        values.append(skHelper.predictionType(knownClass, predClass, posClass))
+        header.append('FP/FN')
 
     if not args.noAddl and hasattr(sample, "getExtraInfoFieldNames"):
-	values += sample.getExtraInfo()
-	header += sample.getExtraInfoFieldNames()
+        values += sample.getExtraInfo()
+        header += sample.getExtraInfoFieldNames()
 
     return values, header
 # ---------------------------
 def verbose(text):
     if args.verbose:
-	sys.stderr.write(text)
-	sys.stderr.flush()
+        sys.stderr.write(text)
+        sys.stderr.flush()
 # ---------------------------
 if __name__ == "__main__": main()

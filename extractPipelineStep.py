@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7 
+#!/usr/bin/env python3
 #
 # Script to take a pickled Pipeline object, extract a step (object) from it,
 #   and save that object in its own separate pickle file.
@@ -12,10 +12,10 @@ import argparse
 
 def parseCmdLine():
     parser = argparse.ArgumentParser( \
-		description='extract a named Pipeline step from pkl file')
+                description='extract a named Pipeline step from pkl file')
 
     parser.add_argument('--step', dest='pipelineStep', default="classifier",
-	help="the step from the Pipeline to extract. " + "Default: classifier")
+        help="the step from the Pipeline to extract. " + "Default: classifier")
 
     parser.add_argument('pkl_input')
     parser.add_argument('pkl_output')
@@ -31,12 +31,12 @@ def main():
     model = pickle.load(open(args.pkl_input, 'rb'))
 
     if not model.named_steps.has_key(args.pipelineStep):
-	sys.stderr.write("%s has no pipeline step '%s'\n" % \
-			    (args.pkl_input, args.pipelineStep))
-	exit(5)
+        sys.stderr.write("%s has no pipeline step '%s'\n" % \
+                            (args.pkl_input, args.pipelineStep))
+        exit(5)
     else:
-	step = model.named_steps[args.pipelineStep]
-	pickle.dump(step, open(args.pkl_output, 'wb'))
+        step = model.named_steps[args.pipelineStep]
+        pickle.dump(step, open(args.pkl_output, 'wb'))
 # ---------------------------
 
 main()
