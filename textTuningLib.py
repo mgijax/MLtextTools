@@ -263,9 +263,16 @@ class TextPipelineTuningHelper (object):
 
         # JIM: the idea was that only this constructor accesses args,
         #      but does it really make sense to copy all these to self. ?
-        self.trainDataPath      = args.trainDataPath
+        self.trainDataPath      = os.path.abspath(args.trainDataPath)
+
         self.valDataPath        = args.valDataPath
+        if self.valDataPath:
+            self.valDataPath = os.path.abspath(args.valDataPath)
+
         self.testDataPath       = args.testDataPath
+        if self.testDataPath:
+            self.testDataPath = os.path.abspath(args.testDataPath)
+
         self.validationSplit    = args.validationSplit
         self.gridSearchBeta     = args.gridSearchBeta
         self.numJobs		= args.numJobs
