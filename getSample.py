@@ -3,8 +3,6 @@
 # Read a sample file from stdin and extract the sample record
 #  for specified pubmed IDs. Write to stdout.
 #
-# Might be able to move this to MLtextTools
-#
 import sys
 import argparse
 import utilsLib
@@ -13,10 +11,10 @@ DEFAULT_SAMPLE_TYPE  = "BaseSample"
 
 def parseCmdLine():
     parser = argparse.ArgumentParser( \
-    description='read article rcds from stdin & write selected rcds to stdout')
+    description='read sample rcds from stdin & write selected rcds to stdout')
 
-    parser.add_argument('pmids', nargs=argparse.REMAINDER,
-        help='pubmed IDs for articles to select')
+    parser.add_argument('sampleIDs', nargs=argparse.REMAINDER,
+        help='IDs for samples to select')
 
     parser.add_argument('--sampletype', dest='sampleObjTypeName',
         default=DEFAULT_SAMPLE_TYPE,
@@ -24,10 +22,10 @@ def parseCmdLine():
                                             "Default: %s" % DEFAULT_SAMPLE_TYPE)
 
     parser.add_argument('--justtext', dest='justText', action='store_true',
-        help="output just the text of the article, not the full sample record")
+        help="output just the text of the sample, not the full sample record")
 
     parser.add_argument('--oneline', dest='oneLine', action='store_true',
-        help="smoosh article records into one line each.")
+        help="smoosh sample records into one line each.")
 
     parser.add_argument('--header', dest='header', action='store_true',
         help="include a header line in the output.")
@@ -70,7 +68,7 @@ def main():
 
     for rcdnum, sample in enumerate(sampleSet.sampleIterator()):
 
-        if sample.getID() in args.pmids: 
+        if sample.getID() in args.sampleIDs: 
             verbose("ID '%s' found at record number %d\n" % \
                                                     (sample.getID(), rcdnum))
             if args.justText:
