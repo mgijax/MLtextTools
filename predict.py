@@ -22,10 +22,6 @@ import argparse
 import sklearnHelperLib as skHelper
 import tuningReportsLib as trl
 
-# extend path up multiple parent dirs, hoping we can import sampleDataLib
-sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
-import sampleDataLib
-
 #-----------------------------------
 
 PIPELINE_FILE = "model.pkl"
@@ -83,6 +79,11 @@ def parseCmdLine():
 #----------------------
   
 args = parseCmdLine()
+
+# extend path up multiple parent dirs, hoping we can import sampleDataLib
+sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
+import sampleDataLib
+
 #----------------------
 
 def main():

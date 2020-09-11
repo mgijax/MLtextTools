@@ -21,11 +21,6 @@ import time
 import argparse
 import sklearnHelperLib as skHelper
 
-# extend path up multiple parent dirs, hoping we can import sampleDataLib
-sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] + \
-                sys.path
-import sampleDataLib
-
 DEFAULT_SAMPLE_TYPE  = "BaseSample"
 #-----------------------------------
 
@@ -59,8 +54,13 @@ def parseCmdLine():
 #----------------------
 
 args = parseCmdLine()
-#----------------------
 
+# extend path up multiple parent dirs, hoping we can import sampleDataLib
+sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] + \
+                sys.path
+import sampleDataLib
+
+#----------------------
 def main():
 
     # get default sampleObjType

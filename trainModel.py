@@ -19,10 +19,6 @@ import utilsLib as ul
 import tuningReportsLib as trl
 from sklearn.pipeline import Pipeline
 
-# extend path up multiple parent dirs, hoping we can import sampleDataLib
-sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
-import sampleDataLib
-
 #-----------------------
 
 NUM_TOP_FEATURES=50	# number of highly weighted features to report
@@ -76,6 +72,11 @@ def parseCmdLine():
 #-----------------------
 
 args = parseCmdLine()
+
+# extend path up multiple parent dirs, hoping we can import sampleDataLib
+sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
+import sampleDataLib
+
 #-----------------------
 
 def main():
