@@ -53,7 +53,8 @@ def getFormattedMetrics( \
             title[:5],
             yClassNames[yClassToScore],
             beta,
-            fbeta_score(y_true, y_predicted, beta, pos_label=yClassToScore),
+            fbeta_score(y_true, y_predicted, beta=float(beta),
+                                                 pos_label=yClassToScore),
             precision_score(y_true, y_predicted, pos_label=yClassToScore),
             recall_score(   y_true, y_predicted, pos_label=yClassToScore),
             # negative predictive value (NPV):
