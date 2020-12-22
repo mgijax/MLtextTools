@@ -1,0 +1,77 @@
+#!/bin/sh
+#
+#  Install
+###########################################################################
+#
+#  Purpose:  This script compiles all *.py files and copies both the *.py
+#            and the *.pyc files to the given directory.
+#
+#  Usage:  Install <library_directory>
+#
+#          where
+#
+#              library_directory is the full path of the directory where
+#                                the *.py and *.pyc files are copied.
+#
+###########################################################################
+
+cd `dirname $0`
+
+#
+# Source the configuration file.
+#
+. ./Configuration
+
+#
+# Verify the arguments to the script.
+#
+if [ $# -ne 1 ]
+then
+    echo "Usage: $0 <library_directory>"
+    exit 1
+fi
+LIBRARY_DIRECTORY=$1
+
+#
+# If the library directory does not exist, create it.
+#
+if [ ! -d ${LIBRARY_DIRECTORY} ]
+then
+    mkdir -p ${LIBRARY_DIRECTORY}
+    if [ $? -ne 0 ]
+    then
+        echo "Cannot create directory: ${LIBRARY_DIRECTORY}"
+        exit 1
+    fi
+fi
+
+#
+# Compile all Python scripts.
+#
+${ANACONDAPYTHON} -m compileall -l -f .
+if [ $? -ne 0 ]
+then
+    echo "Error compiling Python source"
+    exit 1
+fi
+
+#
+# Set the proper permissions on the Python files.
+#
+chmod 775 *.py
+
+#
+# Copy the Python files to the given library directory.
+#
+for FILE in `ls *.py`
+do
+    rm -f ${LIBRARY_DIRECTORY}/${FILE}
+    cp -p ${FILE} ${LIBRARY_DIRECTORY}
+    if [ $? -ne 0 ]
+    then
+        echo "Cannot copy ${FILE} to ${LIBRARY_DIRECTORY}"
+        exit 1
+    fi
+done
+
+exit 0
