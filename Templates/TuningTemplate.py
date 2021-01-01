@@ -1,4 +1,3 @@
-import sys
 import textTuningLib as tl
 import sklearnHelperLib as skHelper
 from sklearn.pipeline import Pipeline

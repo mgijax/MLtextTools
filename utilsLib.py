@@ -10,21 +10,25 @@ import configparser
 
 #-----------------------------------
 
-def getConfig(fileList=[]):
+def getConfig(fileName,         # config filename to look for
+                parentDirs=0,   # number of parent dirs to look for the file in
+                                #   (in addition to current dir)
+                fileList=[]     # any additional config pathnames to look for
+                ):
     """
-    Find config file(s) in parent directories above the current dir
-    and return a ConfigParser object that has read the files.
+    Find a config file searching the current directory and optionally n levels
+        of parent directories.
+    Return a ConfigParser object that has read the files.
     Optional fileList contains the names of config files that take precedence
-    over the standard parent directory list.
+        over the standard parent directory list.
     (later files in fileList take precedence)
     """
     cp = configparser.ConfigParser()
     cp.optionxform = str # make keys case sensitive
 
     # generate a path up multiple parent directories to search for config file
-    # (up to 6 levels above)
-    cl = ['/'.join(l)+'/config.cfg' for l in [['.']]+[['..']*i \
-							for i in range(1,10)]]
+    cl = ['/'.join(l)+'/'+fileName for l in [['.']]+[['..']*i \
+                                            for i in range(1,parentDirs+1)]]
     cl.reverse()    # Note: later files in the list override earlier files.
 
     cp.read(cl + fileList)

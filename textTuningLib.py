@@ -15,17 +15,21 @@ reports used to analyze the tuning runs. Many of the formatting routines
 are in tuningReportsLib.py.
 
 Assumes:
-* Pipelines are for binary classification
-* Pipelines have named steps: 'vectorizer', 'classifier' with their
-*   obvious meanings (may have other steps too)
-* The text sample data is in sklearn load_files directory structure
-*   OR in files parsable by sampleDataLib.py
-* We are scoring Pipeline parameter runs via an F-Score
-*   (beta is a parameter to this library)
-* We can import sampleDataLib that encapsulates knowledge of the specific
-*   document type/set we are dealing with (e.g., how to parse data files
-*   and break records into documents, etc.)
-* probably other things...
+1 Pipelines are for binary classification
+2 Pipelines have named steps: 'vectorizer', 'classifier' with their
+    obvious meanings (may have other steps too)
+3 The text sample data is in sklearn load_files directory structure
+     (haven't used this approach in a while so it hasn't been tested recently)
+    OR in files parsable by a sampleDataLib.py that encapsulates knowledge of
+    the specific document type/set we are dealing with (e.g., how to parse
+    data files and break records into documents, etc.)
+    - the actual filename is a config parameter
+
+    In this latter case, assumes we can import the sampleDataLib
+
+4 We are scoring Pipeline parameter runs via an F-Score
+    (beta is a parameter to this library)
+5 probably other things...
 
 Evaluating Pipeline Parameters:
 Two Approaches are supported/implemented
@@ -109,6 +113,52 @@ Outputs:
     optimal parameters from above but is trained on the training + validation
     set.
 
+Configuration and sampleDataLib:
+A configparser configuration file named 'tuning.cfg' defines various tuning
+parameters.
+
+    Param "SAMPLE_DATA_LIB" specifies how to access the training/validation sets
+    and is either some filename.py or None
+    - specified in config file
+    - default is "sampleDataLib.py"
+
+    (1) if SAMPLE_DATA_LIB is some filename.py (not "None"), we have a
+        sampleDataLib that knows how to read classified sample files
+        - Needs to be importable on the PYTHONPATH
+        - sampleDataLib needs to define 2 classes:
+            - The SAMPLE_OBJ_TYPE class that implements the Sample objects
+                represented in the input sample files.
+                - typically this class will be a subclass of ClassifiedSample
+                - This class should implement class methods:
+                    getClassNames()   
+                    getY_positive()
+                    getY_negative()
+            - The ClassifiedSampleSet class that knows how to read Sample files
+
+    (2) if SAMPLE_DATA_LIB is "None", we use sklearn's load_files mechanism,
+        and the config file defines:
+        y_class_names (e.g., ['no', 'yes'])
+            The labels matching y_values from the training set:
+                y_class_names[y_val]= name
+            These should be the classification labels in alpha order
+            These match training set directory names used by
+                sklearn.datasets.load_files()
+
+        y_class_to_score (e.g., 1)
+            The index in y_class_names to score (typically the positive class),
+                i.e., compute precision, recall, f-score, etc.
+            This class is used in the grid search scoring to select the best
+                model.
+
+        rpt_class_names  (e.g., ['yes', 'no'])
+            Order + labels we want to report in confusion matrix and other rpts.
+
+        rpt_class_mapping (e.g., [1, 0])
+            List of y_values to rpt in confusion matrix and other reports.
+            rpt_class_mapping[y_val] maps to rpt_class_names[]
+
+    See parseCmdLine() below for other expected configuration parameters.
+
 Coding Convention:
     Use camelCase for all the names here, but
     sklearn typically_uses_names with underscores. So _ for sklearn names.
@@ -135,11 +185,6 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import make_scorer, fbeta_score, precision_score, \
                                                             recall_score
 
-# extend path up multiple parent dirs, hoping we can import sampleDataLib
-sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] + \
-                sys.path
-import sampleDataLib
-
 SSTART = "### "			# report output section start delimiter
 
 ############################################################
@@ -153,11 +198,12 @@ def parseCmdLine():
         for cmd line args, they are the 'dest' argument in add_argument()
         for non-cmd line args, they keys are set directly.
     """
-    config = utilsLib.getConfig()
+    config = utilsLib.getConfig('tuning.cfg')
 
     # config file params that are defaults for command line options
-    TRAINING_DATA     = config.get("DEFAULT", "TRAINING_DATA")
-    TUNING_INDEX_FILE = config.get("MODEL_TUNING", "TUNING_INDEX_FILE")
+    TRAINING_SET      = config.get("TRAINING_DATA", "TRAINING_SET")
+    VALIDATION_SET    = config.get("TRAINING_DATA", "VALIDATION_SET")
+    TUNING_INDEX_FILE = config.get("MODEL_TUNING",  "TUNING_INDEX_FILE")
 
     basename = os.path.basename(sys.argv[0])
     OUTPUT_FILE_PREFIX = os.path.splitext(basename)[0]
@@ -167,12 +213,14 @@ def parseCmdLine():
     description='Run a tuning experiment script.')
 
     parser.add_argument('-d', '--trainpath', dest='trainDataPath',
-            default=TRAINING_DATA,
-            help='pathname where training data live. Default: "%s"' \
-                    % TRAINING_DATA)
+            default=TRAINING_SET,
+            help='pathname where training set lives. Default: "%s"' \
+                    % TRAINING_SET)
 
-    parser.add_argument('--valpath', dest='valDataPath', default=None,
-            help='pathname where validation data live. Default: None')
+    parser.add_argument('--valpath', dest='valDataPath',
+            default=VALIDATION_SET,
+            help='pathname where validation set lives. Default: "%s"' \
+                    % VALIDATION_SET)
 
     parser.add_argument('--testpath', dest='testDataPath', default=None,
             help='pathname where test data live. Default: None')
@@ -227,21 +275,38 @@ def parseCmdLine():
     args =  parser.parse_args()
 
     # config params that are not cmdline args (yet)
-    args.SAMPLE_OBJ_TYPE_NAME = config.get("CLASS_NAMES","SAMPLE_OBJ_TYPE_NAME")
-    args.gridSearchBeta  = config.getint  ("MODEL_TUNING", "GRIDSEARCH_BETA")
-    args.compareBeta     = config.getint  ("MODEL_TUNING", "COMPARE_BETA")
-    args.validationSplit = config.getfloat("MODEL_TUNING", "VALIDATION_SPLIT")
-    args.numCV           = config.getint  ("MODEL_TUNING", "NUM_CV")
-    args.numJobs         = eval(config.get("MODEL_TUNING", "NUM_JOBS"))
-    args.yClassToScore   = config.getint  ("CLASS_NAMES",  "y_class_to_score")
-    args.rptClassNames   = eval(config.get("CLASS_NAMES",  "rpt_class_names"))
-    args.rptClassMapping = eval(config.get("CLASS_NAMES",  "rpt_class_mapping"))
-    args.rptNum   = config.getint("CLASS_NAMES","rpt_classification_report_num")
+    args.sampleDataLibFile = config.get("TRAINING_DATA", "SAMPLE_DATA_LIB",
+                                                fallback="sampleDataLib.py")
+    args.sampleObjTypeName = config.get("TRAINING_DATA", "SAMPLE_OBJ_TYPE_NAME",
+                                                fallback="ClassifiedSample")
+    args.yClassNames     = eval(config.get("CLASS_NAMES", "y_class_names",
+                                                fallback="['no', 'yes']"))
+    args.yClassToScore   = config.getint  ("CLASS_NAMES", "y_class_to_score",
+                                                fallback=1)
+    args.rptClassNames   = eval(config.get("CLASS_NAMES", "rpt_class_names",
+                                                fallback="['yes', 'no']"))
+    args.rptClassMapping = eval(config.get("CLASS_NAMES", "rpt_class_mapping",
+                                                fallback="[1, 0]"))
+    args.rptNum   = config.getint("CLASS_NAMES","rpt_classification_report_num",
+                                                fallback=2)
 
+    args.gridSearchBeta  = config.getint(  "MODEL_TUNING", "GRIDSEARCH_BETA",
+                                                                fallback=1)
+    args.compareBeta     = config.getint(  "MODEL_TUNING", "COMPARE_BETA",
+                                                                fallback=1)
+    args.validationSplit = config.getfloat("MODEL_TUNING", "VALIDATION_SPLIT",
+                                                                fallback=0.20)
+    args.numCV           = config.getint(  "MODEL_TUNING", "NUM_CV",
+                                                                fallback=5)
+    args.numJobs         = config.getint(  "MODEL_TUNING", "NUM_JOBS",
+                                                                fallback=1)
     return args
 # ---------------------------
 
 args = parseCmdLine()	# make args available to this code and importers
+
+if args.sampleDataLibFile != "None":    # import the sampleDataLib
+    sampleDataLib = utilsLib.importPyFile(args.sampleDataLibFile)
 
 ############################################################
 # Main class - encapsulates the tuning process
@@ -261,11 +326,12 @@ class TextPipelineTuningHelper (object):
         self.randForSplit       = randomSeeds['randForSplit']	# required seed
         self.note		= note
 
-        # JIM: the idea was that only this constructor accesses args,
-        #      but does it really make sense to copy all these to self. ?
+        # Only this constructor accesses args
         self.trainDataPath      = os.path.abspath(args.trainDataPath)
 
         self.valDataPath        = args.valDataPath
+        if self.valDataPath == "None":
+            self.valDataPath = None
         if self.valDataPath:
             self.valDataPath = os.path.abspath(args.valDataPath)
 
@@ -289,12 +355,25 @@ class TextPipelineTuningHelper (object):
         self.verbose            = args.verbose
         self.gsVerbose          = args.gsVerbose
 
-        self.sampleObjType   = getattr(sampleDataLib, args.SAMPLE_OBJ_TYPE_NAME)
-        self.yClassNames        = self.sampleObjType.getClassNames()
-        self.yClassToScore      = args.yClassToScore
-        self.rptClassNames      = args.rptClassNames
-        self.rptClassMapping    = args.rptClassMapping
-        self.rptNum             = args.rptNum
+        self.sampleDataLibFile  = args.sampleDataLibFile
+        if self.sampleDataLibFile != "None":    # have a sampleDataLib
+            sampleObjType = getattr(sampleDataLib,args.sampleObjTypeName)
+            yClassNames   = sampleObjType.getClassNames()
+
+            # get class names, etc. from sampleObjType
+            self.yClassNames     = yClassNames
+            self.yClassToScore   = sampleObjType.getY_positive()
+            self.rptClassNames = [yClassNames[sampleObjType.getY_positive()],
+                                  yClassNames[sampleObjType.getY_negative()]]
+            self.rptClassMapping = [sampleObjType.getY_positive(),
+                                    sampleObjType.getY_negative()]
+        else:   # get from config file
+            self.yClassNames     = args.yClassNames
+            self.yClassToScore   = args.yClassToScore
+            self.rptClassNames   = args.rptClassNames
+            self.rptClassMapping = args.rptClassMapping
+
+        self.rptNum = args.rptNum
 
         self.startTimeStr = trl.getFormattedTime()
         self.startTime    = time.time()
