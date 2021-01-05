@@ -534,7 +534,6 @@ class TextPipelineTuningHelper (object):
                                 refit=   True,	# if false, no best_estimator_
                                 verbose= self.gsVerbose,
                                 n_jobs=  self.numJobs,
-                                iid=True,
                                 )
             gs.fit( docs_gs, y_gs )
             self.verboseWrite("Done Gridsearch\n")
@@ -709,7 +708,7 @@ class TextPipelineTuningHelper (object):
             fp.write("%s\tF%dPRNPV\t%6.4f\t%6.4f\t%6.4f\t%6.4f\t%s\n" % \
             (self.startTimeStr,
             compareBeta,
-            fbeta_score(    y_true, y_predicted, compareBeta,
+            fbeta_score(    y_true, y_predicted, beta=compareBeta,
                                                 pos_label=self.yClassToScore), 
             precision_score(y_true, y_predicted, pos_label=self.yClassToScore),
             recall_score(   y_true, y_predicted, pos_label=self.yClassToScore),
