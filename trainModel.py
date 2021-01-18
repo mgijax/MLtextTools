@@ -15,15 +15,15 @@ import argparse
 import pickle
 
 import sklearnHelperLib as skHelper
-import utilsLib as ul
+import utilsLib
 import tuningReportsLib as trl
 from sklearn.pipeline import Pipeline
-
 #-----------------------
 
 NUM_TOP_FEATURES=50	# number of highly weighted features to report
 PIPELINE_FILE = "goodPipelines.py"
 OUTPUT_PICKLE_FILE   = "goodModel.pkl"
+DEFAULT_SAMPLEDATALIB  = "sampleDataLib"
 DEFAULT_SAMPLE_TYPE = "ClassifiedSample"
 #-----------------------
 
@@ -57,6 +57,11 @@ def parseCmdLine():
         help='num of top weighted features to output. Default: %d' % \
                                                             NUM_TOP_FEATURES)
 
+    parser.add_argument('--sampledatalib', dest='sampleDataLib',
+        default=DEFAULT_SAMPLEDATALIB,
+        help="Module to import that defines python sample class. " + 
+                                        "Default: %s" % DEFAULT_SAMPLEDATALIB)
+
     parser.add_argument('--sampletype', dest='sampleObjTypeName',
         default=DEFAULT_SAMPLE_TYPE,
         help="Sample class name to use if not specified in sample file. " +
@@ -72,10 +77,7 @@ def parseCmdLine():
 #-----------------------
 
 args = parseCmdLine()
-
-# extend path up multiple parent dirs, hoping we can import sampleDataLib
-sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
-import sampleDataLib
+sampleDataLib = utilsLib.importPyFile(args.sampleDataLib)
 
 #-----------------------
 
@@ -139,7 +141,7 @@ def getPipeline():
     ext = os.path.splitext(fileName)[1]
     if ext == '.py':
         verbose("Importing model source file '%s'\n" % fileName)
-        pipeline = ul.importPyFile(fileName).pipeline
+        pipeline = utilsLib.importPyFile(fileName).pipeline
 
         if type(pipeline) == type([]):
             pipeline = pipeline[0]

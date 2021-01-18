@@ -19,6 +19,7 @@ import sys
 import string
 import pickle
 import argparse
+import utilsLib
 import sklearnHelperLib as skHelper
 import tuningReportsLib as trl
 
@@ -26,6 +27,7 @@ import tuningReportsLib as trl
 
 PIPELINE_FILE = "model.pkl"
 DEFAULT_SAMPLE_TYPE  = "BaseSample"
+DEFAULT_SAMPLEDATALIB  = "sampleDataLib"
 DEFAULT_OUTPUT_FIELDSEP  = "|"
 
 #-----------------------------------
@@ -64,6 +66,11 @@ def parseCmdLine():
         default=DEFAULT_OUTPUT_FIELDSEP,
         help="prediction output field separator. Default: '%s'" \
                                                     % DEFAULT_OUTPUT_FIELDSEP)
+    parser.add_argument('--sampledatalib', dest='sampleDataLib',
+        default=DEFAULT_SAMPLEDATALIB,
+        help="Module to import that defines python sample class. " +
+                                        "Default: %s" % DEFAULT_SAMPLEDATALIB)
+
     parser.add_argument('--sampletype', dest='sampleObjTypeName',
         default=DEFAULT_SAMPLE_TYPE,
         help="Sample class name to use if not specified in sample file. " +
@@ -80,9 +87,7 @@ def parseCmdLine():
   
 args = parseCmdLine()
 
-# extend path up multiple parent dirs, hoping we can import sampleDataLib
-sys.path.extend(['/'.join(dots) for dots in [['..']*i for i in range(1,8)]])
-import sampleDataLib
+sampleDataLib = utilsLib.importPyFile(args.sampleDataLib)
 
 #----------------------
 

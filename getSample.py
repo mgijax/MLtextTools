@@ -8,6 +8,7 @@ import argparse
 import utilsLib
 
 DEFAULT_SAMPLE_TYPE  = "BaseSample"
+DEFAULT_SAMPLEDATALIB  = "sampleDataLib"
 
 def parseCmdLine():
     parser = argparse.ArgumentParser( \
@@ -16,6 +17,10 @@ def parseCmdLine():
     parser.add_argument('sampleIDs', nargs=argparse.REMAINDER,
         help='IDs for samples to select')
 
+    parser.add_argument('--sampledatalib', dest='sampleDataLib',
+        default=DEFAULT_SAMPLEDATALIB,
+        help="Module to import that defines python sample class. " +
+                                        "Default: %s" % DEFAULT_SAMPLEDATALIB)
     parser.add_argument('--sampletype', dest='sampleObjTypeName',
         default=DEFAULT_SAMPLE_TYPE,
         help="Sample class name to use if not specified in sample file. " +
@@ -42,13 +47,9 @@ def parseCmdLine():
 
 args = parseCmdLine()
 
+sampleDataLib = utilsLib.importPyFile(args.sampleDataLib)
+
 def main():
-
-    # extend path up multiple parent dirs, hoping we can import sampleDataLib
-    sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] + \
-                    sys.path
-    import sampleDataLib
-
     ### ideally, the sampleObjType will be determined from #meta in the
     ###    SampleSet file.
     ### args.sampleObjTypeName will only be used if there is no #meta

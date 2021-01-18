@@ -20,7 +20,11 @@ import os
 import time
 import argparse
 import sklearnHelperLib as skHelper
+import utilsLib
 
+
+
+DEFAULT_SAMPLEDATALIB  = "sampleDataLib"
 DEFAULT_SAMPLE_TYPE  = "BaseSample"
 #-----------------------------------
 
@@ -39,6 +43,11 @@ def parseCmdLine():
         action='store_true', 
         help="don't write reject samples, default is write")
 
+    parser.add_argument('--sampledatalib', dest='sampleDataLib',
+        default=DEFAULT_SAMPLEDATALIB,
+        help="Module to import that defines python sample class. " + 
+                                        "Default: %s" % DEFAULT_SAMPLEDATALIB)
+                                        
     parser.add_argument('--sampletype', dest='sampleObjTypeName',
         default=DEFAULT_SAMPLE_TYPE,
         help="Sample class name to use if not specified in sample file. " +
@@ -55,10 +64,7 @@ def parseCmdLine():
 
 args = parseCmdLine()
 
-# extend path up multiple parent dirs, hoping we can import sampleDataLib
-sys.path = ['/'.join(dots) for dots in [['..']*i for i in range(1,8)]] + \
-                sys.path
-import sampleDataLib
+sampleDataLib = utilsLib.importPyFile(args.sampleDataLib)
 
 #----------------------
 def main():
