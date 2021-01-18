@@ -50,7 +50,26 @@ def importPyFile(pyFile):
 #-----------------------------------
 
 nonAsciiRE = re.compile(r'[^\x00-\x7f]')        # match non-ascii chars
+
 def removeNonAscii(text):
     return nonAsciiRE.sub(' ',text)
+#-----------------------------------
+
+urls_re = re.compile(r'\b(?:https?://|www[.]|doi)\S*',re.IGNORECASE)
+
+def removeURLsLower(text):
+    """ Return text with URLs/DOIs removed and everything in lower case
+    """
+    return ' '.join(urls_re.split(text)).lower()
+#-----------------------------------
+
+token_re = re.compile(r'\b(\w+)\b',re.IGNORECASE)
+
+def tokenPerLine(text):
+    """ Return the text with all punctuation removed and each alphanumeric
+        token on a line by itself (in token order)
+    """
+    return '\n'.join([m.group() for m in token_re.finditer(text)]) + '\n'
+
 #-----------------------------------
 
