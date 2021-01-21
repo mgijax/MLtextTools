@@ -103,6 +103,11 @@ def main():
     model = getPipeline()
     sampleSet = getSampleSet(sampleObjType)
 
+    if sampleSet.getNumSamples() == 0:
+        verbose("zero samples to predict\n")
+        exit(0)
+
+    # have some samples to predict
     if args.preprocessors:
         verbose("Running preprocessors %s\n" % str(args.preprocessors))
         rejects = sampleSet.preprocess(args.preprocessors)
