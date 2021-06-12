@@ -68,6 +68,9 @@ class BaseSample_tests(unittest.TestCase):
     def test_getFieldSep(self):
         self.assertEqual('|', self.sample1.getFieldSep())
 
+    def test_getRecordEnd(self):
+        self.assertEqual(';;', self.sample1.getRecordEnd())
+
     def test_removeURLsLower(self):
         sample3 = BaseSample().parseSampleRecordText(\
                             '''pmID3|Some Text http://url.org end text''')
@@ -145,6 +148,9 @@ class ClassifiedSample_tests(unittest.TestCase):
     def test_getFieldSep(self):
         self.assertEqual('|', self.sample1.getFieldSep())
 
+    def test_getRecordEnd(self):
+        self.assertEqual(';;', self.sample1.getRecordEnd())
+
     def test_setgetKnownClassName(self):
         self.assertEqual(self.sample1.getKnownClassName(), 'no')
         self.assertEqual(self.sample2.getKnownClassName(), 'yes')
@@ -174,14 +180,21 @@ class ClassifiedSample_tests(unittest.TestCase):
 
 class SampleSetMetaData_tests(unittest.TestCase):
     def setUp(self):
-        line1 = "#meta foo=blah   nose=toes     rose=rose"
-        self.meta1 = SampleSetMetaData(line1)
+        self.line1 = "%s foo=blah   nose=toes     rose=rose%sother text" %  \
+                        (SampleSetMetaData.metaTag, SampleSetMetaData.metaEnd)
+        self.meta1 = SampleSetMetaData()
+
+    def test_consumeMetaText(self):
+        text = self.meta1.consumeMetaText(self.line1)
+        self.assertEqual(text, "other text")
 
     def test_hasMetaData(self):
+        text = self.meta1.consumeMetaText(self.line1)
         self.assertTrue(self.meta1.hasMetaData())
         self.assertTrue(self.meta1)    # test m as a __bool__
 
-        m = SampleSetMetaData("#text with no\nmeta line")
+        m = SampleSetMetaData()
+        text = m.consumeMetaText("#text with no\nmeta line")
         self.assertFalse(m.hasMetaData())
         self.assertFalse(m)            # test m as a __bool__
 
@@ -191,15 +204,17 @@ class SampleSetMetaData_tests(unittest.TestCase):
         self.assertEqual(d, self.meta1.getMetaDict())
 
     def test_setgetMetaItem(self):
+        text = self.meta1.consumeMetaText(self.line1)
         self.assertEqual('toes', self.meta1.getMetaItem('nose'))
         self.meta1.setMetaItem('nose', 'tomatoes')
         self.assertEqual('tomatoes', self.meta1.getMetaItem('nose'))
 
-    def test_buildMetaLine(self):
-        m = SampleSetMetaData('')
+    def test_buildMetaText(self):
+        m = SampleSetMetaData()
         m.setMetaDict({'foo': 'blah'})
-        expectedText = '#meta foo=blah'
-        self.assertEqual(expectedText, m.buildMetaLine())
+        expectedText = '%s foo=blah%s' % \
+                        (SampleSetMetaData.metaTag, SampleSetMetaData.metaEnd)
+        self.assertEqual(expectedText, m.buildMetaText())
 
 # end class SampleSetMetaData_tests
 ######################################
@@ -258,9 +273,7 @@ class SampleSet_tests(unittest.TestCase):
         fp.close()
 
         # read in the file, verify things seem identical
-        fp = open(fileName, 'r')
-        ss2 = SampleSet().read(fp)
-        fp.close()
+        ss2 = SampleSet().read(fileName)
         self.assertEqual(self.ss.getSampleObjType(), ss2.getSampleObjType())
         self.assertEqual(self.ss.getHeaderLine(), ss2.getHeaderLine())
         self.assertEqual(self.ss.getDocuments()[0], ss2.getDocuments()[0])

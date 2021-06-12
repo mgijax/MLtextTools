@@ -76,8 +76,8 @@ In baseSampleDataLib.py (MLTextTools)
             point
 """
 
-FIELDSEP     = '|'      # field separator when reading/writing sample fields
-RECORDEND    = ';;'     # record ending str when reading/writing sample files
+FIELDSEP  = '|'      # dflt field separator when reading/writing sample fields
+RECORDEND = ';;'     # dflt record ending str when reading/writing sample files
 
 #-----------------------------------
 
@@ -114,7 +114,8 @@ class BaseSample (object):
             'ID'  ,
             'text',
             ]
-    fieldSep = FIELDSEP
+    fieldSep  = FIELDSEP
+    recordEnd = RECORDEND
 
     def __init__(self,):
         self.isRejected = False
@@ -181,6 +182,9 @@ class BaseSample (object):
 
     @classmethod
     def getFieldSep(cls):	return cls.fieldSep
+
+    @classmethod
+    def getRecordEnd(cls):	return cls.recordEnd
 
     @classmethod
     def getFieldNames(cls):	return cls.fieldNames
@@ -318,8 +322,12 @@ class SampleSet (object):
     def __init__(self, sampleObjType=None,
         ):
         self.sampleObjType = sampleObjType
-        self.meta = None # optional metadata from sample set file
-                        # The only thing we actually use is "sampleObjType"
+        self.meta = None        # optional metadata from sample set file
+
+        if self.sampleObjType:
+            self.recordEnd = self.sampleObjType.getRecordEnd()
+        else:
+            self.recordEnd = RECORDEND
         self.samples = []
     #-------------------------
 
@@ -332,29 +340,22 @@ class SampleSet (object):
         else: fp = inFile
 
         self.textToSamples(fp.read())
-        # probably should close the file if we opened it here?
+
+        if type(inFile) == type(''): fp.close() # close if we opened it
+        
         return self
     #-------------------------
 
     def textToSamples(self, text,
         ):
-        rcds = text.split(RECORDEND)
+        self.meta = SampleSetMetaData()
+        text = self.meta.consumeMetaText(text)
 
-        self.meta = SampleSetMetaData(rcds[0])
         if self.meta.hasMetaData():
-            del rcds[0]         # 1st rcd is a meta line, not a real rcd
-            
             sampleObjTypeName = self.meta.getMetaItem('sampleObjType')
             if sampleObjTypeName:       # sample obj type is in meta
                 # Note sampleObjType in the file overrides what is passed
                 #  during instantiation.
-
-                # Old way of getting the type, assuming everything is defined
-                #   in this module
-                #self.sampleObjType = getattr(sys.modules[__name__],
-                #                                        sampleObjTypeName)
-
-                # New way
                 # get module
                 moduleName = self.meta.getMetaItem('moduleName')
                 if not moduleName:      # module not in meta
@@ -370,13 +371,15 @@ class SampleSet (object):
 
                 self.sampleObjType = getattr(sys.modules[moduleName],
                                                             sampleObjTypeName)
-            # else: assume set upon instantiation
+                self.recordEnd = self.sampleObjType.getRecordEnd()
+            # else: assume sample obj type was set upon instantiation
 
+        rcds = text.split(self.recordEnd)
         del rcds[0]             # header text
         del rcds[-1]            # empty string after end of split
 
         for sr in rcds:
-            self.addSample( self.sampleObjType().parseSampleRecordText(sr) )
+            self.addSample(self.sampleObjType().parseSampleRecordText(sr))
         return self
     #-------------------------
 
@@ -396,14 +399,15 @@ class SampleSet (object):
             moduleName = inspect.getmodule(self.sampleObjType).__name__
             self.setMetaItem('moduleName', moduleName)
             
-            fp.write( self.meta.buildMetaLine() + RECORDEND )
+            fp.write(self.meta.buildMetaText())
 
-        if writeHeader:	fp.write(self.getHeaderLine() + RECORDEND)
+        if writeHeader:	fp.write(self.getHeaderLine() + self.recordEnd)
 
         for s in self.sampleIterator(omitRejects=omitRejects):
-            fp.write(s.getSampleAsText() + RECORDEND)
+            fp.write(s.getSampleAsText() + self.recordEnd)
 
-        # probably should close the file if we opened it here?
+        if type(outFile) == type(''): fp.close()      # close if we opened it
+
         return self
     #-------------------------
 
@@ -476,7 +480,7 @@ class SampleSet (object):
     def getNumSamples(self, omitRejects=False):
         return len(self.getSamples(omitRejects=omitRejects))
 
-    def getRecordEnd(self):	return RECORDEND
+    def getRecordEnd(self):	return self.recordEnd
 
     def getSampleObjType(self): return self.sampleObjType
     def getSampleClassNames(self):
@@ -490,7 +494,7 @@ class SampleSet (object):
 
     def setMetaItem(self, key, value):
         if self.meta == None:
-            self.meta = SampleSetMetaData('')
+            self.meta = SampleSetMetaData()
         self.meta.setMetaItem(key, value)
 
 # end class SampleSet -----------------------------------
@@ -535,42 +539,52 @@ class SampleSetMetaData (object):
     Is:  basically a dictionary of name value pairs that knows how to parse
         and construct a text string representing the items
     """
+    metaTag = '#meta '		# start of meta text
+    metaEnd = '\n'              # ending of a meta text
+    metaSep = '='		# sep between key and value on a meta line
 
-    def __init__(self, text):
-        self.metaTag = '#meta'		# start of meta text
-        self.metaSep = '='		# sep between key and value
+    def __init__(self, ):
         self.metaData = None		# the key:value pairs
-        self.parseMetaLine(text)
     #-------------------------
 
-    def parseMetaLine(self,
-                text,	# text that may contain meta info
-                ):
-        """ Return dict of meta info or None
+    def consumeMetaText(self,
+                text,	# text that may start with meta info
+        ):
+        """ if 'text' begins with a meta info, consume it and set the metadata.
+            Return the text with the (optional) meta info removed.
         """
-        parts = text.split()
-        if not parts or parts[0] != self.metaTag:
-            self.metaData = None
+        if text.startswith(self.metaTag):
+            metaLine, rest = text.split(self.metaEnd, 1)
+            self.parseMetaText(metaLine)
+            return rest
         else:
-            self.metaData = {}
-            for part in parts[1:]:
-                # split into name:value pair
-                l = part.split(self.metaSep, 1)
-                name = l[0]
-                if len(l) == 1: value = ''
-                else: value = l[1]
-                self.metaData[name.strip()] = value.strip()
-        return self.metaData
+            self.metaData = None
+            return text
     #-------------------------
 
-    def buildMetaLine(self,):
+    def parseMetaText(self, text,):
+        """ Populate the metaData dict
+        """
+        self.metaData = {}
+
+        parts = text.split()
+        for part in parts[1:]:
+            # split into name:value pair
+            l = part.split(self.metaSep, 1)
+            name = l[0]
+            if len(l) == 1: value = ''
+            else: value = l[1]
+            self.metaData[name.strip()] = value.strip()
+    #-------------------------
+
+    def buildMetaText(self,):
         """ Return text containing meta info
         """
         text = self.metaTag + " "
         if self.metaData:
             text += " ".join( [ k + self.metaSep + str(v)
                                         for k,v in self.metaData.items() ] )
-        return text
+        return text + self.metaEnd
     #-------------------------
 
     def setMetaDict(self, d):
