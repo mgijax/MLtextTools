@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
-# Library to support handling of lit triage samples (training samples or
-#  samples to predict)
+# Library to support handling of text machine learning samples and sample files
+#    (training samples or samples to predict)
 #
 # Automated tests for this module are available:
 #  cd test
@@ -14,8 +14,6 @@ import re
 from copy import copy
 import inspect
 import utilsLib
-import figureText
-import featureTransform
 
 #-----------------------------------
 #
@@ -86,7 +84,6 @@ class BaseSample (object):
     Base class for text samples that my be classified or unclassified.
 
     HAS: ID, text
-
         Subclasses can have other fields (and omit the text field) defined
         in fieldNames below
 
@@ -94,7 +91,6 @@ class BaseSample (object):
 
         Has the class names (e.g., 'no', 'yes'), knows which class is
             considered "positive", etc.
-
     DOES:
         Can read/write the sample as text
         Provides various methods to preprocess a sample record
