@@ -18,7 +18,6 @@ import sklearnHelperLib as skHelper
 import utilsLib
 import tuningReportsLib as trl
 from sklearn.pipeline import Pipeline
-#-----------------------
 
 NUM_TOP_FEATURES=50	# number of highly weighted features to report
 PIPELINE_FILE = "goodPipelines.py"
@@ -31,7 +30,7 @@ def parseCmdLine():
     parser = argparse.ArgumentParser( \
     description='Train a model and pickle it so it can be used to predict.')
 
-    parser.add_argument('inputFiles', nargs=argparse.REMAINDER,
+    parser.add_argument('inputFiles', nargs='+',
         help='files of samples or -, may be sklearn load_files dirs')
 
     parser.add_argument('-m', '--model', dest='pipelineFile',
@@ -80,12 +79,11 @@ args = parseCmdLine()
 sampleDataLib = utilsLib.importPyFile(args.sampleDataLib)
 
 #-----------------------
-
 def main():
-
+#-----------------------
     # get default sampleObjType
     if not hasattr(sampleDataLib, args.sampleObjTypeName):
-        sys.stderr.write("invalid sample class name '%s'" \
+        sys.stderr.write("invalid sample class name '%s'\n" \
                                                     % args.sampleObjTypeName)
         exit(5)
     sampleObjType = getattr(sampleDataLib, args.sampleObjTypeName)

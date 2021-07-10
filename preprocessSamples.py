@@ -22,8 +22,6 @@ import argparse
 import sklearnHelperLib as skHelper
 import utilsLib
 
-
-
 DEFAULT_SAMPLEDATALIB  = "sampleDataLib"
 DEFAULT_SAMPLE_TYPE  = "BaseSample"
 #-----------------------------------
@@ -32,7 +30,7 @@ def parseCmdLine():
     parser = argparse.ArgumentParser( \
     description='Apply preprocessor steps to files of samples. Write to stdout')
 
-    parser.add_argument('inputFiles', nargs=argparse.REMAINDER,
+    parser.add_argument('inputFiles', nargs='+',
     	help='files of samples, "-" for stdin')
 
     parser.add_argument('-p', '--preprocessor', metavar='PREPROCESSOR',
@@ -63,15 +61,14 @@ def parseCmdLine():
 #----------------------
 
 args = parseCmdLine()
-
 sampleDataLib = utilsLib.importPyFile(args.sampleDataLib)
 
 #----------------------
 def main():
-
+#----------------------
     # get default sampleObjType
     if not hasattr(sampleDataLib, args.sampleObjTypeName):
-        sys.stderr.write("invalid sample class name '%s'" \
+        sys.stderr.write("invalid sample class name '%s'\n" \
                                                     % args.sampleObjTypeName)
         exit(5)
     sampleObjType = getattr(sampleDataLib, args.sampleObjTypeName)
@@ -83,7 +80,6 @@ def main():
     startTime = time.time()
 
     for fn in args.inputFiles:
-
         verbose("Preprocessing '%s'\n" % fn)
         if fn == '-': fn = sys.stdin
 

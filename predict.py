@@ -23,20 +23,17 @@ import utilsLib
 import sklearnHelperLib as skHelper
 import tuningReportsLib as trl
 
-#-----------------------------------
-
 PIPELINE_FILE = "model.pkl"
 DEFAULT_SAMPLE_TYPE  = "BaseSample"
 DEFAULT_SAMPLEDATALIB  = "sampleDataLib"
 DEFAULT_OUTPUT_FIELDSEP  = "|"
-
 #-----------------------------------
 
 def parseCmdLine():
     parser = argparse.ArgumentParser( \
                 description='predict samples. Write predictions to stdout')
 
-    parser.add_argument('inputFiles', nargs=argparse.REMAINDER,
+    parser.add_argument('inputFiles', nargs='+',
         help='files of samples or -')
 
     parser.add_argument('-m', '--model', dest='pipelineFile', action='store',
@@ -86,16 +83,15 @@ def parseCmdLine():
 #----------------------
   
 args = parseCmdLine()
-
 sampleDataLib = utilsLib.importPyFile(args.sampleDataLib)
 
 #----------------------
-
 def main():
+#----------------------
 
     # get default sampleObjType
     if not hasattr(sampleDataLib, args.sampleObjTypeName):
-        sys.stderr.write("invalid sample class name '%s'" \
+        sys.stderr.write("invalid sample class name '%s'\n" \
                                                     % args.sampleObjTypeName)
         exit(5)
     sampleObjType = getattr(sampleDataLib, args.sampleObjTypeName)

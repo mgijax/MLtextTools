@@ -14,7 +14,7 @@ def parseCmdLine():
     parser = argparse.ArgumentParser( \
     description='read sample rcds from stdin & write selected rcds to stdout')
 
-    parser.add_argument('sampleIDs', nargs=argparse.REMAINDER,
+    parser.add_argument('sampleIDs', nargs='+',
         help='IDs for samples to select')
 
     parser.add_argument('--sampledatalib', dest='sampleDataLib',
@@ -46,9 +46,9 @@ def parseCmdLine():
 #---------------------------
 
 args = parseCmdLine()
-
 sampleDataLib = utilsLib.importPyFile(args.sampleDataLib)
 
+#---------------------------
 def main():
     ### ideally, the sampleObjType will be determined from #meta in the
     ###    SampleSet file.
