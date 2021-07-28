@@ -123,7 +123,10 @@ def getBestParamsReport( \
     output += "\n"
 
     for stepName, obj in pipeline.named_steps.items():
-        output += "%s:\n%s\n\n" % (stepName, obj)
+        output += "%s:\n%s\n" % (stepName, obj)
+        if hasattr(obj, 'get_params'):
+            output += "params: " + str(obj.get_params()) + "\n"
+        output += "\n"
     output += "\n"
 
     return output
