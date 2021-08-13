@@ -84,18 +84,31 @@ class TextMapping (object):
         any text that matches the regex.
     DOES: keeps track of the text strings that were replaced
     """
-    def __init__(self, name, regex, replacement):
+    def __init__(self, name, regex, replacement, context=0):
         self.name = name
         self.regex = regex
         self.replacement = replacement
+        self.context = context  # num of chars around the matching string to
+                                #   keep when recording matches to this mapping
         self.resetMatches()
 
     def resetMatches(self):
         self.matches = {}       # {'matching text string': count}
 
-    def wasMatched(self, text):
-        """ register the fact that 'text' was replaced by this TextMapping"""
-        self.matches[text] = self.matches.get(text, 0) + 1
+    def wasMatched(self, text, start, end):
+        """ Register the fact that text[start:end] was matched/replaced by this
+            TextMapping
+        """
+        # Determine the matching text
+        if self.context:        # record n chars around the matching text
+            preText  = text[max(0, start-self.context) : start]
+            postText = text[end : end+self.context]
+            matchingText = "%s|%s|%s" % (preText, text[start:end], postText)
+        else:                   # just the matching text
+            matchingText = text[start:end]
+
+        # Update the count for this matching text
+        self.matches[matchingText] = self.matches.get(matchingText, 0) + 1
 
     def getMatches(self): return self.matches
 # end class TextMapping -----------------------------------
@@ -173,7 +186,7 @@ class TextTransformer (object):
                                 #  processed so far
         for m in self.bigRe.finditer(text):
             key, start, end = findMatchingGroup(m)
-            self.mappingDict[key].wasMatched(text[start:end])
+            self.mappingDict[key].wasMatched(text, start, end)
             replacement = self.mappingDict[key].replacement
             transformed += text[endOfLastMatch:start] + replacement
             endOfLastMatch = end
@@ -199,4 +212,3 @@ def findMatchingGroup(m):
         return (k, m.start(k), m.end(k))        # return 1st matching group
 
     return (None, None, None) # shouldn't happen since some group should match
-
