@@ -17,6 +17,11 @@ class TextTransformer_tests(unittest.TestCase):
             TextMapping('THESE', r'\b(?:these)\b', 'these_'),
         ]
 
+    def test_distinctMappingNames(self):
+        dupMapping = TextMapping('THE', r'this is a duplicate name', 'abc')
+        with self.assertRaises(ValueError):
+            t = TextTransformer(self.THEmappings + [dupMapping])
+
     def test__buildBigRe(self):
         t = TextTransformer(self.THEmappings)
         #print(t.getBigRegex())

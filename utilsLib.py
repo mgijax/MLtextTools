@@ -132,13 +132,25 @@ class TextTransformer (object):
         Assumes all the TextMappings have unique names that don't contain
             "<" or ">"
         """
-        self.mappings = mappings
         self.reFlags = reFlags
-        self.mappingDict = {m.name : m for m in self.mappings}
+        self.mappings = mappings                    # the list of mappings
+        self.mappingDict = self._buildMappingDict() # dict of mappings
         self.resetMatches()
         self.bigRegex = None
         self.bigRe = None
         self._buildBigRe()
+
+    def _buildMappingDict(self):
+        """ Build a dict of names to TextMappings
+        """
+        d = {}
+        for m in self.mappings:
+            if m.name in d:
+                msg = "Two TextMappings have the same name: '%s'\n" % m.name
+                raise ValueError(msg)
+
+            d[m.name] = m
+        return d
 
     def _buildBigRe(self):
         """ combine all the mappings into one big re
