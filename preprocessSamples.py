@@ -51,6 +51,11 @@ def parseCmdLine():
         help="Sample class name to use if not specified in sample file. " +
                                         "Default: %s" % DEFAULT_SAMPLE_TYPE)
 
+    parser.add_argument('--report', dest='preprocessorReport',
+        default=None,
+        help="Write a preprocessor report to the specified file. " +
+                                    "Default: no report")
+
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
         default=True, help="include helpful messages to stderr, default")
 
@@ -110,6 +115,13 @@ def main():
 
     if args.omitRejects: numWritten = totNumSamples - totNumRejects
     else: numWritten = totNumSamples
+
+    if args.preprocessorReport \
+        and hasattr(sampleObjType, 'getPreprocessorReport'):
+        with open(args.preprocessorReport, 'w') as fp:
+            fp.write(sampleObjType.getPreprocessorReport())
+        verbose("Wrote preprocessor report to '%s'\n" % args.preprocessorReport)
+
     verbose("Samples read: %d \t Samples written: %d\n" % \
                                                 (totNumSamples, numWritten))
     verbose( "Total time: %8.3f seconds\n\n" % (time.time()-startTime))
