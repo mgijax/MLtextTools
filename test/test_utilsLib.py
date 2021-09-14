@@ -70,5 +70,30 @@ class TextTransformer_tests(unittest.TestCase):
 # end class TextTransformer_tests
 ######################################
 
+class TextMappingFromStrings_tests(unittest.TestCase):
+
+    def test_basic(self):
+        strings = [r'abc def [1]   ()+ \foo', r'def']
+        tm = TextMappingFromStrings('basic', strings, 'foo')
+        print('\n')
+        print("'%s'" % tm.regex)
+        print("'%s'" % squeezeAndEscape(strings[0]))
+        # TODO: add some actual tests!
+
+# end class TextMappingFromStrings_tests
+######################################
+
+class TextMappingFromFile_tests(unittest.TestCase):
+
+    def test_basic(self):
+        fileName = 'mappingTestData.txt'
+        tm = TextMappingFromFile('basic', fileName, 'foo')
+        print('\n')
+        print("'%s'" % tm.regex)
+        # TODO: add some actual tests!
+
+# end class TextMappingFromFile_tests
+######################################
+
 if __name__ == '__main__':
     unittest.main()

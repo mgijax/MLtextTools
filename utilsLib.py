@@ -113,6 +113,72 @@ class TextMapping (object):
     def getMatches(self): return self.matches
 # end class TextMapping -----------------------------------
 
+class TextMappingFromStrings (TextMapping):
+    """
+    IS: A TextMapping that is built from a set of strings. 
+        The strings may be read in from a file.
+    """
+    def __init__(self, name, strings, replacement, context=0):
+        regex = self._buildRegex(strings)
+        super().__init__(name, regex, replacement, context=context)
+
+    def _buildRegex(self, strings):
+        """
+        Return a regex string that matches the list of strings
+        """
+        regexes = []
+        for s in strings:
+            regex = self._str2regex(s)
+            regexes.append(regex)
+        
+        return '|'.join(regexes)
+
+    def _str2regex(self, s):
+        """ convert string to regex string.
+            Override this method to customize the regex production
+        """
+        return escAndWordBoundaries(s)
+
+# end class TextMappingFromStrings  -----------------------------------
+
+class TextMappingFromFile (TextMappingFromStrings):
+    """
+    IS: A TextMappingFromStrings that is built from a set of strings read in
+        from a file.
+    """
+    def __init__(self, name, inFile, replacement, context=0):
+
+        if type(inFile) == type(''): fp = open(inFile, 'r')
+        else: fp = inFile
+
+        # Assume: each line is a string to map, strip initial/final whitespaces
+        #         from each line. Ignore blank/whitespace lines.
+        strings = [ s.strip() for s in fp.readlines()  
+                                        if s.strip() and not s.startswith('#')]
+
+        if type(inFile) == type(''): fp.close()         # close if we opened it
+
+        super().__init__(name, strings, replacement, context=context)
+
+    def _str2regex(self, s):
+        """ convert string to regex string.
+        """
+        return r'\b' + squeezeAndEscape(s) + r'\b'
+
+# end class TextMappingFromFile  -----------------------------------
+
+#---------------------------------
+# Some handy string/regex helper functions
+def escAndWordBoundaries(s):
+    return r'\b' + re.escape(s) + r'\b'
+
+def squeezeAndEscape(s):
+    """ squeeze white space, replace with r'\s', and re.escape all other chars
+    """
+    return r'\s'.join( [re.escape(w) for w in s.split()] )
+
+#---------------------------------
+
 class TextTransformer (object):
     """
     IS: an object that efficiently does a bunch of text transformations based
@@ -209,7 +275,6 @@ class TextTransformer (object):
     def resetMatches(self):
         for m in self.mappings:
             m.resetMatches()
-#---------------------------------
 # end class TextTransformer -----------------------------------
 
 def findMatchingGroup(m):
