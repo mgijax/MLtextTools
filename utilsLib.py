@@ -126,15 +126,12 @@ class TextMappingFromStrings (TextMapping):
         """
         Return a regex string that matches the list of strings
         """
-        regexes = []
-        for s in strings:
-            regex = self._str2regex(s)
-            regexes.append(regex)
-        
+        regexes = [ self._str2regex(s) for s in strings ]
         return '|'.join(regexes)
 
     def _str2regex(self, s):
-        """ convert string to regex string.
+        """ Return a regex string that matches s:
+                Match s exactly surrounded by word boundaries.
             Override this method to customize the regex production
         """
         return escAndWordBoundaries(s)
@@ -152,8 +149,8 @@ class TextMappingFromFile (TextMappingFromStrings):
         else: fp = inFile
 
         # Assume: each line is a string to map, strip initial/final whitespaces
-        #         from each line. Ignore blank/whitespace lines.
-        strings = [ s.strip() for s in fp.readlines()  
+        #         from each line. Ignore blank/whitespace lines & comment lines.
+        strings = [ s.strip() for s in fp.readlines()
                                         if s.strip() and not s.startswith('#')]
 
         if type(inFile) == type(''): fp.close()         # close if we opened it
@@ -161,7 +158,10 @@ class TextMappingFromFile (TextMappingFromStrings):
         super().__init__(name, strings, replacement, context=context)
 
     def _str2regex(self, s):
-        """ convert string to regex string.
+        """ Return a regex string that matches s:
+                Match s with arbitrary whitespace wherever s has whitespace,
+                surrounded by word boundaries.
+            Override this method to customize the regex production
         """
         return r'\b' + squeezeAndEscape(s) + r'\b'
 
@@ -170,12 +170,22 @@ class TextMappingFromFile (TextMappingFromStrings):
 #---------------------------------
 # Some handy string/regex helper functions
 def escAndWordBoundaries(s):
+    """ Take a string, and return regex string that matches that string
+        exactly, surrounded by word boundaries.
+        Note "word boundaries" (\b) is a little more subtle than I thought.
+            With the surrounding \b's,
+            if s begins or ends with a non-alphanumberic char,
+            the resulting regex is not likely to match anything.
+            So be careful if your strings begin or end w/ spaces or punct.
+    """
     return r'\b' + re.escape(s) + r'\b'
 
 def squeezeAndEscape(s):
-    """ squeeze white space, replace with r'\s', and re.escape all other chars
+    """ Take a string and return a regex string that matches that string
+        but with arbitrary whitespaces wherever the original string has
+        whitespace.
     """
-    return r'\s'.join( [re.escape(w) for w in s.split()] )
+    return r'\s+'.join( [re.escape(w) for w in s.split()] )
 
 #---------------------------------
 
@@ -232,7 +242,8 @@ class TextTransformer (object):
     def getBigRe(self):    return self.bigRe
 
     def getMatches(self):
-        """ Return a report of all the text matches/transformations found.
+        """ Return the text matches/transformations applied so far by this
+            TextTransformer.
             I.e., a list of triples:
                 (mapping name, {'matching text':count}, replacement str)
         """
@@ -273,6 +284,8 @@ class TextTransformer (object):
         return transformed
 
     def resetMatches(self):
+        """ Clear the matches seen so far by this TextTransformer
+        """
         for m in self.mappings:
             m.resetMatches()
 # end class TextTransformer -----------------------------------

@@ -70,27 +70,101 @@ class TextTransformer_tests(unittest.TestCase):
 # end class TextTransformer_tests
 ######################################
 
+class HelperFunction_tests(unittest.TestCase):
+
+    def test_escAndWordBoundaries(self):
+        s = r'some[a][b]*\word\s'
+        regex = escAndWordBoundaries(s)
+        #print()
+        #print("'%s'" % s)
+        #print("'%s'" % regex)
+        r = re.compile(regex)
+        self.assertIsNotNone(r.search(s))               # should match itself
+        self.assertIsNotNone(r.search('word ' + s + '.fun'))
+        self.assertIsNone(r.search('some text'))
+
+    def test_squeezeAndEscape(self):
+        s  = 'some word\\s  more\nwords'
+        s2 = 'some     word\\s  more  \twords'
+        regex = squeezeAndEscape(s)
+        #print()
+        #print("'%s'" % s)
+        #print("'%s'" % regex)
+        r = re.compile(regex)
+        self.assertIsNotNone(r.search(s))
+        self.assertIsNotNone(r.search(s2))
+        self.assertIsNotNone(r.search('word ' + s2 + '.fun'))
+
+# end class TextMappingFromStrings_tests
+######################################
+
 class TextMappingFromStrings_tests(unittest.TestCase):
 
-    def test_basic(self):
-        strings = [r'abc def [1]   ()+ \foo', r'def']
-        tm = TextMappingFromStrings('basic', strings, 'foo')
-        print('\n')
-        print("'%s'" % tm.regex)
-        print("'%s'" % squeezeAndEscape(strings[0]))
-        # TODO: add some actual tests!
+    def test_FromStringsBasic(self):
+        strings = [r'abc', r'word (in) parens',]
+        tm = TextMappingFromStrings('myname', strings, 'foo', context=3)
+        t = TextTransformer([tm])
+        #print()
+        #print("'%s'" % tm.regex)
+        #print("'%s'" % squeezeAndEscape(strings[0]))
+
+        text = 'start abc, abcdef. Word (in) parens. end'
+        expect = 'start foo, abcdef. foo. end'
+        transformed = t.transformText(text)
+        self.assertEqual(transformed, expect)
+        #print('\n' + t.getMatchesReport())
 
 # end class TextMappingFromStrings_tests
 ######################################
 
 class TextMappingFromFile_tests(unittest.TestCase):
 
-    def test_basic(self):
-        fileName = 'mappingTestData.txt'
-        tm = TextMappingFromFile('basic', fileName, 'foo')
-        print('\n')
-        print("'%s'" % tm.regex)
-        # TODO: add some actual tests!
+    def setUp(self):
+        # write a test mapping file
+        self.fileName = 'mappingFromFileTestData.txt'
+        lines = ['1246', 'a[1]b', '14F1.1', ' two  words ', '# foo']
+        with open(self.fileName, 'w') as fp:
+            for t in lines:
+                fp.write(t + '\n')
+        self.tm = TextMappingFromFile('basic', self.fileName, 'NEW')
+
+    def tearDown(self):
+        os.remove(self.fileName)
+        pass
+
+    def test_FromFileBasic(self):
+        t = TextTransformer([self.tm])
+        #print('\n')
+        #print("'%s'" % self.tm.regex)
+        text = 'start 1246, end'
+        expect = 'start NEW, end'
+        self.assertEqual(t.transformText(text), expect)
+
+        text = 'start A[1]b, end'
+        expect = 'start NEW, end'
+        self.assertEqual(t.transformText(text), expect)
+
+        text = 'start 14f1.1, end'      # '.' should match '.'
+        expect = 'start NEW, end'
+        self.assertEqual(t.transformText(text), expect)
+
+        text = 'start 14f1:1, end'      # '.' should not match ':'
+        expect = 'start 14f1:1, end'    # no change
+        self.assertEqual(t.transformText(text), expect)
+
+        text = 'start:two words, end'   # handle arbitrary spaces
+        expect = 'start:NEW, end'
+        self.assertEqual(t.transformText(text), expect)
+
+        text = 'start:two      words end'       # handle arbitrary spaces
+        expect = 'start:NEW end'
+        self.assertEqual(t.transformText(text), expect)
+
+        text = 'start foo end'
+        expect = 'start foo end'        # no change since foo commented out
+        self.assertEqual(t.transformText(text), expect)
+
+        #print('\n' + t.getMatchesReport())
 
 # end class TextMappingFromFile_tests
 ######################################
