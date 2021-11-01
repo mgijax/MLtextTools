@@ -112,7 +112,7 @@ class TextMappingFromStrings_tests(unittest.TestCase):
         expect = 'start foo, abcdef. foo. end'
         transformed = t.transformText(text)
         self.assertEqual(transformed, expect)
-        #print('\n' + t.getMatchesReport())
+        #print('\n' + t.getsReport())
 
 # end class TextMappingFromStrings_tests
 ######################################
@@ -164,7 +164,7 @@ class TextMappingFromFile_tests(unittest.TestCase):
         expect = 'start foo end'        # no change since foo commented out
         self.assertEqual(t.transformText(text), expect)
 
-        #print('\n' + t.getMatchesReport())
+        #print('\n' + t.getsReport())
 
 # end class TextMappingFromFile_tests
 ######################################

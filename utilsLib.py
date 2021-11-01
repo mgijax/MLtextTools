@@ -255,7 +255,7 @@ class TextTransformer (object):
 
         return matches
 
-    def getMatchesReport(self, title="Text Transformation Report"):
+    def getReport(self, title="Text Transformation Report"):
         """ Return a string: nicely formatted matches report"""
         output = title + "\n"
 
