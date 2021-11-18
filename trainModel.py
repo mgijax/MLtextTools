@@ -102,7 +102,8 @@ def main():
 
     with open(args.outputPklFile, 'wb') as fp:
         pickle.dump(pipeline, fp)
-    verbose("Trained model written to '%s'\n" % args.outputPklFile)
+    verbose("Trained model written to '%s'\n" % \
+                                        os.path.abspath(args.outputPklFile))
 
     if args.featureFile:
         writeFeaturesFile(pipeline, args.featureFile)
@@ -118,13 +119,14 @@ def writeFeaturesFile(pipeline, fileName):
     else:
         fp = open(fileName, 'w')
         fp.write(trl.getTopFeaturesReport(orderedFeatures, args.numTopFeatures))
-        verbose("Top weighted features written to '%s'\n" % fileName)
+        verbose("Top weighted features written to '%s'\n" % \
+                                                os.path.abspath(fileName))
 #-----------------------
 
 def getTrainingSet(sampleObjType):
     sampleSet = sampleDataLib.ClassifiedSampleSet(sampleObjType=sampleObjType)
     for fn in args.inputFiles:
-        verbose("Reading '%s' ...\n" % fn)
+        verbose("Reading '%s' ...\n" % os.path.abspath(fn))
         if fn == '-': fn = sys.stdin
 
         sampleSet.read(fn)
@@ -138,14 +140,15 @@ def getPipeline():
     fileName = args.pipelineFile
     ext = os.path.splitext(fileName)[1]
     if ext == '.py':
-        verbose("Importing model source file '%s'\n" % fileName)
+        verbose("Importing model source file '%s'\n" % \
+                                                os.path.abspath(fileName))
         pipeline = utilsLib.importPyFile(fileName).pipeline
 
         if type(pipeline) == type([]):
             pipeline = pipeline[0]
 
     elif ext == '.pkl':
-        verbose("Loading model '%s'\n" % fileName)
+        verbose("Loading model '%s'\n" % os.path.abspath(fileName))
         with open(fileName, 'rb') as fp:
             pipeline = pickle.load(fp)
         verbose("...done\n")
