@@ -99,7 +99,7 @@ def getOrderedFeatures( vectorizer,     # fitted vectorizer from a pipeline
     '''
     Return list of pairs, [ (feature, coef), (feature, coef), ... ]
         ordered from highest coef to lowest.
-    Assumes:  vectorizer has get_feature_names() method
+    Assumes:  vectorizer has get_feature_names_out() method
     '''
     if hasattr(classifier, 'feature_importances_'):
         coefficients = classifier.feature_importances_
@@ -108,7 +108,7 @@ def getOrderedFeatures( vectorizer,     # fitted vectorizer from a pipeline
     else:
         return []
 
-    featureNames = vectorizer.get_feature_names()
+    featureNames = vectorizer.get_feature_names_out()
 
     pairList = zip(featureNames, coefficients)
 
